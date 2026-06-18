@@ -82,6 +82,8 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
     .filter((p) => p.turnNumber === room.turnNumber)
     .reduce((sum, p) => sum + p.margin, 0);
 
+  const connectedCount = room.players.filter((p) => p.isConnected).length;
+  const canStartGame = connectedCount >= 2;
   const maxTurns = room.maxTurns ?? MAX_TURNS;
   const startingBalance = room.startingBalance ?? STARTING_BALANCE;
   const bettingPhase = isBettingPhase(room.phase);
@@ -242,8 +244,8 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
               </button>
               <button
                 onClick={handleStartGame}
-                disabled={room.players.filter((p) => p.isConnected).length < 2}
-                className="rounded-lg bg-[var(--color-accent-green)] px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+                disabled={!canStartGame}
+                className="rounded-lg bg-[var(--color-accent-green)] px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 게임 시작
               </button>
@@ -360,7 +362,10 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
                 </div>
                 <h2 className="text-lg font-bold">플레이어 대기 중</h2>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-                  {room.players.filter((p) => p.isConnected).length}/{room.maxPlayers}명 접속 / 최소 2명 필요
+                  {connectedCount}/{room.maxPlayers}명 접속 / 최소 2명 필요
+                </p>
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  자동 시작 아님 · 방장이 직접 시작 버튼을 눌러야 합니다
                 </p>
                 <p className="mt-1 text-xs text-[var(--color-accent-yellow)]">
                   시작 자본금 {formatKRW(startingBalance)} · BTC 시작가 {formatPrice(STARTING_PRICE)}
@@ -372,9 +377,30 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
                     </div>
                   ))}
                 </div>
-                {isHost && (
-                  <p className="mt-6 text-xs text-[var(--color-accent-yellow)]">
-                    상단의 게임 시작 버튼을 눌러주세요
+                {isHost ? (
+                  <div className="mt-8 flex flex-col items-center gap-3">
+                    <button
+                      onClick={handleStartGame}
+                      disabled={!canStartGame}
+                      className="w-full max-w-xs rounded-xl bg-[var(--color-accent-green)] px-8 py-4 text-base font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      게임 시작
+                    </button>
+                    <button
+                      onClick={copyInviteLink}
+                      className="w-full max-w-xs rounded-xl border border-[var(--color-accent-yellow)] px-6 py-3 text-sm font-semibold text-[var(--color-accent-yellow)] transition hover:bg-[var(--color-accent-yellow)]/10"
+                    >
+                      {copied ? '초대 링크 복사됨!' : '친구 초대 링크 복사'}
+                    </button>
+                    {!canStartGame && (
+                      <p className="text-xs text-[var(--color-accent-red)]">
+                        친구가 1명 이상 더 들어와야 시작할 수 있습니다
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-8 text-sm text-[var(--color-text-secondary)]">
+                    방장이 게임 시작 버튼을 누를 때까지 대기 중...
                   </p>
                 )}
               </div>

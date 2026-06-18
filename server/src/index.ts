@@ -4,7 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import { GameEngine, toPublicRoomState } from './GameEngine.js';
-import { PricePoint } from './types.js';
+import { PricePoint, ABANDONED_ROOM_SWEEP_MS } from './types.js';
 import { addChatMessage, getChatHistory, clearRoomChat } from './chat.js';
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*';
@@ -32,12 +32,19 @@ const io = new Server(httpServer, {
   pingInterval: 25000,
 });
 
-const engine = new GameEngine((roomId) => {
-  const room = engine.getRoom(roomId);
-  if (room) {
-    io.to(roomId).emit('roomUpdate', toPublicRoomState(room));
+const engine = new GameEngine(
+  (roomId) => {
+    const room = engine.getRoom(roomId);
+    if (room) {
+      io.to(roomId).emit('roomUpdate', toPublicRoomState(room));
+    }
+  },
+  (roomId) => {
+    clearRoomChat(roomId);
+    io.to(roomId).emit('roomDeleted');
+    broadcastRooms();
   }
-});
+);
 
 function broadcastRooms() {
   io.emit('roomsList', engine.getAllRooms());
@@ -118,8 +125,6 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: '방을 삭제할 권한이 없습니다' });
       return;
     }
-    clearRoomChat(roomId);
-    io.to(roomId).emit('roomDeleted');
     broadcastRooms();
   });
 
@@ -255,4 +260,8 @@ io.on('connection', (socket) => {
 httpServer.listen(PORT, () => {
   console.log(`BitG server running on port ${PORT}`);
   console.log(`Allowed client origin: ${CLIENT_ORIGIN}`);
+
+  setInterval(() => {
+    engine.cleanupAbandonedWaitingRooms();
+  }, ABANDONED_ROOM_SWEEP_MS);
 });

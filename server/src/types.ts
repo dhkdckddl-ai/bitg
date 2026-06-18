@@ -7,7 +7,8 @@ export const ANIMATION_DURATION_MS = 75_000;
 export const PRICE_POINTS = 240;
 export const MAX_PLAYERS_PER_ROOM = 8;
 export const MAX_TURNS = 10;
-export const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
+export const DISCONNECT_GRACE_MS = 3 * 60 * 1000;
+export const ABANDONED_ROOM_SWEEP_MS = 60 * 1000;
 
 export type GamePhase = 'waiting' | 'drawing' | 'betting' | 'animating' | 'turn_end' | 'game_end';
 

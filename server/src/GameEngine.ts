@@ -209,10 +209,90 @@ export class GameEngine {
   private rooms = new Map<string, RoomState>();
   private playerRoom = new Map<string, string>();
   private animationTimers = new Map<string, NodeJS.Timeout>();
+  private waitingRoomCleanupTimers = new Map<string, NodeJS.Timeout>();
   private onRoomUpdate: (roomId: string) => void;
+  private onRoomRemoved: (roomId: string) => void;
 
-  constructor(onRoomUpdate: (roomId: string) => void) {
+  constructor(onRoomUpdate: (roomId: string) => void, onRoomRemoved?: (roomId: string) => void) {
     this.onRoomUpdate = onRoomUpdate;
+    this.onRoomRemoved = onRoomRemoved ?? (() => {});
+  }
+
+  private isWaitingLobby(room: RoomState): boolean {
+    return !room.gameStarted && room.phase === 'waiting';
+  }
+
+  private cancelWaitingRoomCleanup(roomId: string): void {
+    const timer = this.waitingRoomCleanupTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.waitingRoomCleanupTimers.delete(roomId);
+    }
+  }
+
+  private destroyWaitingRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    this.cancelWaitingRoomCleanup(roomId);
+    this.stopAnimation(roomId);
+    for (const p of room.players) {
+      this.playerRoom.delete(p.id);
+    }
+    this.rooms.delete(roomId);
+    this.onRoomRemoved(roomId);
+  }
+
+  private scheduleWaitingRoomCleanup(roomId: string): void {
+    if (this.waitingRoomCleanupTimers.has(roomId)) return;
+
+    const timer = setTimeout(() => {
+      this.waitingRoomCleanupTimers.delete(roomId);
+      this.tryCleanupAbandonedWaitingRoom(roomId);
+    }, DISCONNECT_GRACE_MS);
+
+    this.waitingRoomCleanupTimers.set(roomId, timer);
+  }
+
+  private tryCleanupAbandonedWaitingRoom(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room || !this.isWaitingLobby(room)) return false;
+    if (room.players.some((p) => p.isConnected)) {
+      this.cancelWaitingRoomCleanup(roomId);
+      return false;
+    }
+
+    const now = Date.now();
+    const allPastGrace = room.players.every(
+      (p) => p.disconnectedAt !== null && now - p.disconnectedAt >= DISCONNECT_GRACE_MS
+    );
+
+    if (room.players.length === 0 || allPastGrace) {
+      this.destroyWaitingRoom(roomId);
+      return true;
+    }
+
+    this.scheduleWaitingRoomCleanup(roomId);
+    return false;
+  }
+
+  /** 주기적으로 비어 있는 대기 방 정리 */
+  cleanupAbandonedWaitingRooms(): string[] {
+    const removed: string[] = [];
+    for (const roomId of [...this.rooms.keys()]) {
+      if (this.tryCleanupAbandonedWaitingRoom(roomId)) {
+        removed.push(roomId);
+      }
+    }
+    return removed;
+  }
+
+  private afterPlayerConnectionChange(room: RoomState): void {
+    if (this.isWaitingLobby(room) && !room.players.some((p) => p.isConnected)) {
+      this.scheduleWaitingRoomCleanup(room.id);
+    } else {
+      this.cancelWaitingRoomCleanup(room.id);
+    }
   }
 
   createRoom(hostId: string, hostNickname: string, roomName: string): RoomState {
@@ -243,11 +323,7 @@ export class GameEngine {
   deleteRoom(roomId: string, requesterId: string): boolean {
     const room = this.rooms.get(roomId);
     if (!room || room.hostId !== requesterId) return false;
-    this.stopAnimation(roomId);
-    for (const p of room.players) {
-      this.playerRoom.delete(p.id);
-    }
-    this.rooms.delete(roomId);
+    this.destroyWaitingRoom(roomId);
     return true;
   }
 
@@ -260,6 +336,7 @@ export class GameEngine {
       existing.isConnected = true;
       existing.disconnectedAt = null;
       this.playerRoom.set(playerId, roomId);
+      this.cancelWaitingRoomCleanup(roomId);
       return { room };
     }
 
@@ -277,6 +354,7 @@ export class GameEngine {
     const joinsFromTurn = room.gameStarted ? room.turnNumber + 1 : 1;
     room.players.push(createPlayer(playerId, nickname, joinsFromTurn));
     this.playerRoom.set(playerId, roomId);
+    this.cancelWaitingRoomCleanup(roomId);
     return { room };
   }
 
@@ -291,6 +369,7 @@ export class GameEngine {
 
     player.isConnected = true;
     player.disconnectedAt = null;
+    this.cancelWaitingRoomCleanup(room.id);
     return room;
   }
 
@@ -305,6 +384,11 @@ export class GameEngine {
 
     player.isConnected = false;
     player.disconnectedAt = Date.now();
+
+    if (this.isWaitingLobby(room)) {
+      this.afterPlayerConnectionChange(room);
+      return;
+    }
 
     if (!room.gameStarted) {
       setTimeout(() => {
@@ -324,11 +408,16 @@ export class GameEngine {
     this.playerRoom.delete(playerId);
 
     if (room.players.length === 0) {
-      this.stopAnimation(roomId);
-      this.rooms.delete(roomId);
-    } else if (room.hostId === playerId) {
+      this.destroyWaitingRoom(roomId);
+      return;
+    }
+
+    if (room.hostId === playerId) {
       room.hostId = room.players.find((p) => p.isConnected)?.id ?? room.players[0].id;
     }
+
+    this.afterPlayerConnectionChange(room);
+    this.onRoomUpdate(roomId);
   }
 
   leaveRoom(playerId: string): void {
@@ -351,11 +440,15 @@ export class GameEngine {
     this.playerRoom.delete(playerId);
 
     if (room.players.length === 0) {
-      this.stopAnimation(roomId);
-      this.rooms.delete(roomId);
-    } else if (room.hostId === playerId) {
+      this.destroyWaitingRoom(roomId);
+      return;
+    }
+
+    if (room.hostId === playerId) {
       room.hostId = room.players.find((p) => p.isConnected)?.id ?? room.players[0].id;
     }
+
+    this.afterPlayerConnectionChange(room);
   }
 
   getRoom(roomId: string): RoomState | undefined {
@@ -377,16 +470,21 @@ export class GameEngine {
     turnNumber: number;
     maxTurns: number;
   }[] {
-    return Array.from(this.rooms.values()).map((r) => ({
-      id: r.id,
-      name: r.name,
-      playerCount: r.players.filter((p) => p.isConnected).length,
-      maxPlayers: MAX_PLAYERS_PER_ROOM,
-      hostNickname: r.players.find((p) => p.id === r.hostId)?.nickname ?? '',
-      gameStarted: r.gameStarted,
-      turnNumber: r.turnNumber,
-      maxTurns: MAX_TURNS,
-    }));
+    return Array.from(this.rooms.values())
+      .filter((r) => {
+        if (r.gameStarted || r.phase !== 'waiting') return true;
+        return r.players.some((p) => p.isConnected);
+      })
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        playerCount: r.players.filter((p) => p.isConnected).length,
+        maxPlayers: MAX_PLAYERS_PER_ROOM,
+        hostNickname: r.players.find((p) => p.id === r.hostId)?.nickname ?? '',
+        gameStarted: r.gameStarted,
+        turnNumber: r.turnNumber,
+        maxTurns: MAX_TURNS,
+      }));
   }
 
   startGame(roomId: string, requesterId: string): boolean {
