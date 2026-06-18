@@ -64,14 +64,12 @@ function getActivePlayer(room: RoomState): Player | null {
   return active[room.turnIndex % active.length];
 }
 
-function getBettors(room: RoomState, active: Player | null): Player[] {
-  return room.players.filter(
-    (p) =>
-      !p.isEliminated &&
-      p.id !== active?.id &&
-      p.isConnected &&
-      p.balance >= MIN_BET
-  );
+function getRequiredBettors(room: RoomState, active: Player | null): Player[] {
+  return room.players.filter((p) => {
+    if (p.isEliminated || !p.isConnected || p.id === active?.id) return false;
+    const turnBet = getTurnBetTotal(p, room.turnNumber);
+    return turnBet >= MIN_BET || p.balance >= MIN_BET;
+  });
 }
 
 function getTurnBetTotal(player: Player, turnNumber: number): number {
@@ -465,7 +463,7 @@ export class GameEngine {
     if (!room.pathSubmitted || room.pricePath.length === 0) return;
 
     const active = getActivePlayer(room);
-    const bettors = getBettors(room, active);
+    const bettors = getRequiredBettors(room, active);
 
     if (bettors.length === 0) {
       this.startAnimation(roomId);

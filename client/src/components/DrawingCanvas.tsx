@@ -7,9 +7,11 @@ interface Props {
   currentPrice: number;
   onSubmit: (path: PricePoint[]) => void;
   disabled?: boolean;
+  submitted?: boolean;
+  submitting?: boolean;
 }
 
-export default function DrawingCanvas({ minPrice, maxPrice, currentPrice, onSubmit, disabled }: Props) {
+export default function DrawingCanvas({ minPrice, maxPrice, currentPrice, onSubmit, disabled, submitted, submitting }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [points, setPoints] = useState<{ x: number; y: number }[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -178,7 +180,7 @@ export default function DrawingCanvas({ minPrice, maxPrice, currentPrice, onSubm
 
   const handleSubmit = () => {
     const canvas = canvasRef.current;
-    if (!canvas || points.length < 2) return;
+    if (!canvas || points.length < 2 || disabled) return;
 
     const { width, height } = canvas;
     const sampled: PricePoint[] = [];
@@ -227,10 +229,10 @@ export default function DrawingCanvas({ minPrice, maxPrice, currentPrice, onSubm
           </button>
           <button
             onClick={handleSubmit}
-            disabled={disabled || points.length < 2}
+            disabled={disabled || submitted || submitting || points.length < 2}
             className="rounded bg-[var(--color-accent-yellow)] px-4 py-1.5 text-xs font-semibold text-black transition hover:brightness-110 disabled:opacity-40"
           >
-            완료
+            {submitted ? '제출됨' : submitting ? '제출 중...' : '완료'}
           </button>
         </div>
       </div>

@@ -30,6 +30,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
   const [sidePanel, setSidePanel] = useState<'trade' | 'sell'>('trade');
   const [copied, setCopied] = useState(false);
   const [showDrawTurnBanner, setShowDrawTurnBanner] = useState(false);
+  const [pathSubmitting, setPathSubmitting] = useState(false);
 
   const inviteLink = getInviteLink(room.id);
 
@@ -46,6 +47,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
   const isSpectator = isEliminated;
 
   const handleSubmitPath = (path: { t: number; price: number }[]) => {
+    setPathSubmitting(true);
     socketService.submitPath(room.id, path);
   };
 
@@ -80,7 +82,15 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
   const bettingPhase = isBettingPhase(room.phase);
   const isAnimating = room.phase === 'animating';
 
-  const showDrawing = bettingPhase && isActivePlayer && !isSpectator;
+  const showDrawing = bettingPhase && isActivePlayer && !isSpectator && !room.pathSubmitted;
+  const waitingForBettors = bettingPhase && isActivePlayer && room.pathSubmitted;
+  const requiredBettors = room.players.filter((p) => {
+    if (p.isEliminated || !p.isConnected || p.id === room.activePlayerId) return false;
+    const turnBet = (p.positions ?? [])
+      .filter((pos) => pos.turnNumber === room.turnNumber)
+      .reduce((sum, pos) => sum + pos.margin, 0);
+    return turnBet >= MIN_BET || p.balance >= MIN_BET;
+  });
   const showPreBetting =
     bettingPhase &&
     !isActivePlayer &&
@@ -101,6 +111,12 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
       setSidePanel('sell');
     }
   }, [bettingPhase, isAnimating, room.turnNumber, me?.positions.length]);
+
+  useEffect(() => {
+    if (room.pathSubmitted || room.phase !== 'drawing') {
+      setPathSubmitting(false);
+    }
+  }, [room.pathSubmitted, room.phase]);
 
   useEffect(() => {
     if (!showDrawing) {
@@ -130,7 +146,17 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
         </div>
       )}
 
-      {bettingPhase && !isActivePlayer && !isSpectator && (
+      {bettingPhase && !isActivePlayer && !isSpectator && room.pathSubmitted && (
+        <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
+          <div className="mx-4 mt-4 rounded-xl border-2 border-[var(--color-accent-green)] bg-[var(--color-accent-green)]/15 px-6 py-4 text-center backdrop-blur-sm">
+            <p className="text-xl font-bold text-[var(--color-accent-green)] md:text-2xl">
+              그래프 제출됨 — 배팅 후 완료 버튼을 눌러주세요!
+            </p>
+          </div>
+        </div>
+      )}
+
+      {bettingPhase && !isActivePlayer && !isSpectator && !room.pathSubmitted && (
         <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
           <div className="mx-4 mt-4 rounded-xl border-2 border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/15 px-6 py-4 text-center backdrop-blur-sm">
             <p className="text-xl font-bold text-white md:text-2xl">
@@ -337,7 +363,42 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
               maxPrice={room.maxPrice}
               currentPrice={room.currentPrice}
               onSubmit={handleSubmitPath}
+              submitted={room.pathSubmitted}
+              submitting={pathSubmitting}
             />
+          ) : waitingForBettors ? (
+            <div className="flex flex-1 items-center justify-center bg-[var(--color-bg-secondary)]">
+              <div className="rounded-xl border border-[var(--color-accent-yellow)]/40 bg-[var(--color-accent-yellow)]/5 p-8 text-center max-w-md">
+                <p className="text-3xl">✓</p>
+                <h2 className="mt-3 text-xl font-bold text-[var(--color-accent-yellow)]">그래프 제출 완료!</h2>
+                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                  다른 플레이어가 배팅하고 <span className="text-white">배팅 완료</span> 버튼을 누르면 그래프가 시작됩니다
+                </p>
+                <div className="mt-6 space-y-2 text-left">
+                  {requiredBettors.length === 0 ? (
+                    <p className="text-center text-sm text-[var(--color-accent-green)]">곧 그래프가 시작됩니다...</p>
+                  ) : (
+                    requiredBettors.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
+                      >
+                        <span>{p.nickname}</span>
+                        <span
+                          className={
+                            p.bettingReady
+                              ? 'text-[var(--color-accent-green)]'
+                              : 'text-[var(--color-text-secondary)]'
+                          }
+                        >
+                          {p.bettingReady ? '✓ 배팅 완료' : '배팅 대기 중...'}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="flex flex-1 min-h-0">
               <div className="flex flex-1 flex-col min-w-0">
@@ -423,6 +484,23 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                 onReady={handleReady}
                 liveTrading
               />
+            ) : waitingForBettors ? (
+              <div className="p-4">
+                <p className="text-center text-sm font-semibold text-[var(--color-accent-yellow)]">배팅 대기 중</p>
+                <p className="mt-2 text-center text-xs text-[var(--color-text-secondary)]">
+                  다른 플레이어가 최소 10만원 배팅 후 완료 버튼을 눌러야 합니다
+                </p>
+                <div className="mt-4 space-y-2">
+                  {requiredBettors.map((p) => (
+                    <div key={p.id} className="flex justify-between text-xs">
+                      <span>{p.nickname}</span>
+                      <span className={p.bettingReady ? 'text-[var(--color-accent-green)]' : ''}>
+                        {p.bettingReady ? '완료' : '대기'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : bettingPhase && isActivePlayer ? (
               <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
                 <p>그래프를 완료해주세요</p>
