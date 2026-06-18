@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { socketService, getInviteLink } from '../socket';
-import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, isBettingPhase } from '../types';
+import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, STARTING_BALANCE, STARTING_PRICE, isBettingPhase } from '../types';
 import TradingChart from './TradingChart';
 import DrawingCanvas from './DrawingCanvas';
 import BettingPanel from './BettingPanel';
@@ -29,6 +29,7 @@ const PHASE_LABELS: Record<string, string> = {
 export default function GameRoom({ room, playerId, error, onDismissError, onLeave }: Props) {
   const [sidePanel, setSidePanel] = useState<'trade' | 'sell'>('trade');
   const [copied, setCopied] = useState(false);
+  const [showDrawTurnBanner, setShowDrawTurnBanner] = useState(false);
 
   const inviteLink = getInviteLink(room.id);
 
@@ -75,6 +76,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
     .reduce((sum, p) => sum + p.margin, 0);
 
   const maxTurns = room.maxTurns ?? MAX_TURNS;
+  const startingBalance = room.startingBalance ?? STARTING_BALANCE;
   const bettingPhase = isBettingPhase(room.phase);
 
   const showDrawing = bettingPhase && isActivePlayer && !isSpectator;
@@ -96,10 +98,21 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
     }
   }, [bettingPhase, room.turnNumber, canSell, me?.positions.length]);
 
+  useEffect(() => {
+    if (!showDrawing) {
+      setShowDrawTurnBanner(false);
+      return;
+    }
+
+    setShowDrawTurnBanner(true);
+    const timer = setTimeout(() => setShowDrawTurnBanner(false), 2000);
+    return () => clearTimeout(timer);
+  }, [showDrawing, room.turnNumber]);
+
   return (
     <div className="flex h-full flex-col relative">
       {/* 내 차례 — 그래프 그리기 대형 알림 */}
-      {showDrawing && (
+      {showDrawing && showDrawTurnBanner && (
         <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
           <div className="animate-pulse-glow mx-4 mt-4 rounded-2xl border-4 border-[var(--color-accent-yellow)] bg-[var(--color-accent-yellow)]/15 px-8 py-6 text-center backdrop-blur-sm">
             <h2 className="text-3xl font-black text-[var(--color-accent-yellow)] md:text-4xl">
@@ -151,7 +164,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
 
           {room.phase !== 'waiting' && (
             <div className="hidden items-center gap-2 rounded-lg bg-[var(--color-bg-tertiary)] px-3 py-1.5 sm:flex">
-              <span className="text-[10px] text-[var(--color-text-secondary)]">현재가</span>
+              <span className="text-[10px] text-[var(--color-text-secondary)]">BTC 현재가</span>
               <span className="font-mono text-sm font-bold text-[var(--color-accent-yellow)]">
                 {formatPrice(room.currentPrice)}
               </span>
@@ -176,8 +189,10 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
         <div className="flex items-center gap-2">
           {me && (
             <div className="mr-2 hidden text-right sm:block">
-              <span className="text-[10px] text-[var(--color-text-secondary)]">{me.nickname}</span>
-              <p className="font-mono text-sm font-bold">{formatKRW(me.totalEquity)}</p>
+              <span className="text-[10px] text-[var(--color-text-secondary)]">{me.nickname} · 보유자산</span>
+              <p className="font-mono text-sm font-bold" title={formatKRW(me.totalEquity)}>
+                {formatKRW(me.totalEquity)}
+              </p>
             </div>
           )}
 
@@ -294,6 +309,9 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                 <h2 className="text-lg font-bold">플레이어 대기 중</h2>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
                   {room.players.filter((p) => p.isConnected).length}/{room.maxPlayers}명 접속 / 최소 2명 필요
+                </p>
+                <p className="mt-1 text-xs text-[var(--color-accent-yellow)]">
+                  시작 자본금 {formatKRW(startingBalance)} · BTC 시작가 {formatPrice(STARTING_PRICE)}
                 </p>
                 <div className="mt-6 space-y-2">
                   {room.players.map((p) => (

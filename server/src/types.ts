@@ -98,6 +98,7 @@ export interface PublicRoomState {
   maxPrice: number;
   maxPlayers: number;
   maxTurns: number;
+  startingBalance: number;
   winnerId: string | null;
   pathSubmitted: boolean;
 }

@@ -177,6 +177,7 @@ export function toPublicRoomState(room: RoomState): PublicRoomState {
     maxPrice: max,
     maxPlayers: MAX_PLAYERS_PER_ROOM,
     maxTurns: MAX_TURNS,
+    startingBalance: STARTING_BALANCE,
     winnerId: room.winnerId,
     pathSubmitted: room.pathSubmitted,
   };
@@ -348,6 +349,14 @@ export class GameEngine {
     room.gameStarted = true;
     room.turnNumber = 1;
     room.turnIndex = 0;
+
+    for (const player of room.players) {
+      if (!player.isEliminated) {
+        player.balance = STARTING_BALANCE;
+        player.positions = [];
+        player.bettingReady = false;
+      }
+    }
 
     this.startDrawingPhase(room);
     return true;
