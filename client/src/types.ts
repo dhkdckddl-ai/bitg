@@ -3,7 +3,7 @@ export const STARTING_PRICE = 1_000_000;
 export const MIN_BET = 100_000;
 export const MAX_LEVERAGE = 100;
 
-export type GamePhase = 'waiting' | 'drawing' | 'betting' | 'animating' | 'turn_end';
+export type GamePhase = 'waiting' | 'drawing' | 'animating' | 'turn_end' | 'game_end';
 
 export type PositionType = 'long' | 'short';
 
@@ -19,6 +19,7 @@ export interface Position {
   leverage: number;
   entryPrice: number;
   remainingMargin: number;
+  turnNumber?: number;
 }
 
 export interface PublicPlayer {
@@ -49,6 +50,9 @@ export interface PublicRoomState {
   minPrice: number;
   maxPrice: number;
   maxPlayers: number;
+  maxTurns: number;
+  winnerId: string | null;
+  pathSubmitted: boolean;
 }
 
 export interface RoomListItem {

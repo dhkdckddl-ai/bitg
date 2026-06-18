@@ -3,19 +3,29 @@ import { MIN_BET, MAX_LEVERAGE, formatKRW } from '../types';
 
 interface Props {
   balance: number;
+  turnBetTotal: number;
   onBet: (type: 'long' | 'short', margin: number, leverage: number) => void;
   onReady: () => void;
   disabled?: boolean;
   bettingReady?: boolean;
 }
 
-export default function BettingPanel({ balance, onBet, onReady, disabled, bettingReady }: Props) {
+export default function BettingPanel({
+  balance,
+  turnBetTotal,
+  onBet,
+  onReady,
+  disabled,
+  bettingReady,
+}: Props) {
   const [betType, setBetType] = useState<'long' | 'short'>('long');
   const [margin, setMargin] = useState(MIN_BET);
   const [leverage, setLeverage] = useState(1);
 
   const notional = margin * leverage;
   const liquidationPct = (100 / leverage).toFixed(1);
+  const canReady = turnBetTotal >= MIN_BET && !bettingReady;
+  const remainingRequired = Math.max(0, MIN_BET - turnBetTotal);
 
   const handleBet = () => {
     if (margin < MIN_BET || margin > balance) return;
@@ -26,6 +36,20 @@ export default function BettingPanel({ balance, onBet, onReady, disabled, bettin
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      <div className="rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 p-3 text-xs">
+        <div className="flex justify-between">
+          <span className="text-[var(--color-text-secondary)]">이번 턴 배팅액</span>
+          <span className={`font-mono font-bold ${turnBetTotal >= MIN_BET ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
+            {formatKRW(turnBetTotal)} / {formatKRW(MIN_BET)}
+          </span>
+        </div>
+        {remainingRequired > 0 && (
+          <p className="mt-1 text-[var(--color-accent-red)]">
+            {formatKRW(remainingRequired)} 더 배팅해야 완료 가능
+          </p>
+        )}
+      </div>
+
       <div className="flex gap-1 rounded-lg bg-[var(--color-bg-tertiary)] p-1">
         <button
           onClick={() => setBetType('long')}
@@ -63,7 +87,7 @@ export default function BettingPanel({ balance, onBet, onReady, disabled, bettin
           min={MIN_BET}
           max={Math.max(MIN_BET, balance)}
           step={10_000}
-          value={Math.min(margin, balance)}
+          value={Math.min(margin, Math.max(MIN_BET, balance))}
           onChange={(e) => setMargin(Number(e.target.value))}
           disabled={disabled}
           className="w-full"
@@ -141,14 +165,14 @@ export default function BettingPanel({ balance, onBet, onReady, disabled, bettin
 
       <button
         onClick={onReady}
-        disabled={disabled || bettingReady}
+        disabled={disabled || !canReady}
         className={`w-full rounded-lg border py-3 text-sm font-semibold transition ${
           bettingReady
             ? 'border-[var(--color-accent-green)] bg-[var(--color-accent-green)]/10 text-[var(--color-accent-green)]'
             : 'border-[var(--color-accent-yellow)] text-[var(--color-accent-yellow)] hover:bg-[var(--color-accent-yellow)]/10'
         } disabled:opacity-40`}
       >
-        {bettingReady ? '✓ 준비 완료' : '준비 완료 (패스 가능)'}
+        {bettingReady ? '✓ 배팅 완료' : `배팅 완료 (최소 ${(MIN_BET / 10000).toFixed(0)}만원 필수)`}
       </button>
     </div>
   );

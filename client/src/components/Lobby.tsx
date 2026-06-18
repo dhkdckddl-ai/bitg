@@ -142,9 +142,9 @@ export default function Lobby({
               <h3 className="mb-2 text-sm font-medium text-[var(--color-accent-yellow)]">게임 규칙</h3>
               <ul className="space-y-1 text-xs text-[var(--color-text-secondary)]">
                 <li>• 시작 시드: 1,000만원 / BTC 시작가: 100만원</li>
-                <li>• 턴마다 한 명이 ±50% 범위 내 그래프를 그립니다</li>
-                <li>• 나머지 플레이어는 롱/숏/레버리지(최대 100배)로 배팅</li>
-                <li>• 최소 배팅: 10만원 / 매도: 10%~100% 부분 매도 가능</li>
+                <li>• 총 10턴 · 최종 자산 1등 승리</li>
+                <li>• 그래프 그리는 동안 다른 플레이어는 동시 배팅</li>
+                <li>• 턴마다 최소 10만원 배팅 필수 (스킵 불가)</li>
                 <li>• 잔액 0원 시 탈락 → 관전 모드</li>
               </ul>
             </div>

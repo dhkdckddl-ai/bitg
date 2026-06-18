@@ -6,9 +6,10 @@ export const MAX_PRICE_CHANGE = 0.5;
 export const ANIMATION_DURATION_MS = 90_000;
 export const PRICE_POINTS = 240;
 export const MAX_PLAYERS_PER_ROOM = 8;
+export const MAX_TURNS = 10;
 export const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
 
-export type GamePhase = 'waiting' | 'drawing' | 'betting' | 'animating' | 'turn_end';
+export type GamePhase = 'waiting' | 'drawing' | 'animating' | 'turn_end' | 'game_end';
 
 export type PositionType = 'long' | 'short';
 
@@ -24,6 +25,7 @@ export interface Position {
   leverage: number;
   entryPrice: number;
   remainingMargin: number;
+  turnNumber: number;
 }
 
 export interface Player {
@@ -49,6 +51,9 @@ export interface RoomState {
   animationProgress: number;
   turnNumber: number;
   gameStarted: boolean;
+  maxTurns: number;
+  winnerId: string | null;
+  pathSubmitted: boolean;
   createdAt: number;
 }
 
@@ -91,4 +96,7 @@ export interface PublicRoomState {
   minPrice: number;
   maxPrice: number;
   maxPlayers: number;
+  maxTurns: number;
+  winnerId: string | null;
+  pathSubmitted: boolean;
 }

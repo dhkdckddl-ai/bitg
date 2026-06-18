@@ -8,6 +8,7 @@ import {
   ANIMATION_DURATION_MS,
   PRICE_POINTS,
   MAX_PLAYERS_PER_ROOM,
+  MAX_TURNS,
   DISCONNECT_GRACE_MS,
   GamePhase,
   Player,
@@ -58,6 +59,35 @@ function getActivePlayer(room: RoomState): Player | null {
   const active = getActivePlayers(room);
   if (active.length === 0) return null;
   return active[room.turnIndex % active.length];
+}
+
+function getBettors(room: RoomState, active: Player | null): Player[] {
+  return room.players.filter(
+    (p) =>
+      !p.isEliminated &&
+      p.id !== active?.id &&
+      p.isConnected &&
+      p.balance >= MIN_BET
+  );
+}
+
+function getTurnBetTotal(player: Player, turnNumber: number): number {
+  return player.positions
+    .filter((p) => p.turnNumber === turnNumber)
+    .reduce((sum, p) => sum + p.margin, 0);
+}
+
+function findWinner(room: RoomState): Player | null {
+  let best: Player | null = null;
+  let bestEquity = -Infinity;
+  for (const player of room.players) {
+    const equity = calcTotalEquity(player, room.currentPrice);
+    if (equity > bestEquity) {
+      bestEquity = equity;
+      best = player;
+    }
+  }
+  return best;
 }
 
 function getMinMaxPrice(currentPrice: number): { min: number; max: number } {
@@ -111,7 +141,7 @@ function toPublicPlayer(player: Player, currentPrice: number): PublicPlayer {
 }
 
 function getVisiblePricePath(room: RoomState): PricePoint[] {
-  if (room.phase === 'drawing' || room.phase === 'betting' || room.phase === 'waiting') {
+  if (room.phase === 'drawing' || room.phase === 'waiting' || room.phase === 'game_end') {
     return [];
   }
   if (room.pricePath.length === 0) return [];
@@ -143,6 +173,9 @@ export function toPublicRoomState(room: RoomState): PublicRoomState {
     minPrice: min,
     maxPrice: max,
     maxPlayers: MAX_PLAYERS_PER_ROOM,
+    maxTurns: MAX_TURNS,
+    winnerId: room.winnerId,
+    pathSubmitted: room.pathSubmitted,
   };
 }
 
@@ -170,6 +203,8 @@ export class GameEngine {
       animationProgress: 0,
       turnNumber: 0,
       gameStarted: false,
+      winnerId: null,
+      pathSubmitted: false,
       createdAt: Date.now(),
     };
     this.rooms.set(roomId, room);
@@ -321,21 +356,18 @@ export class GameEngine {
     if (rawPath.length < 2) return false;
 
     room.pricePath = normalizePath(rawPath, room.currentPrice);
-    room.phase = 'betting';
+    room.pathSubmitted = true;
 
-    for (const p of room.players) {
-      p.bettingReady = false;
-    }
-
+    this.tryStartAnimation(roomId);
     return true;
   }
 
   placeBet(roomId: string, playerId: string, bet: BetRequest): string | null {
     const room = this.rooms.get(roomId);
-    if (!room || room.phase !== 'betting') return '배팅 단계가 아닙니다';
+    if (!room || room.phase !== 'drawing') return '배팅 가능 시간이 아닙니다';
 
     const active = getActivePlayer(room);
-    if (active?.id === playerId) return '자신의 턴에는 배팅할 수 없습니다';
+    if (active?.id === playerId) return '그래프를 그리는 동안에는 배팅할 수 없습니다';
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player || player.isEliminated) return '플레이어를 찾을 수 없습니다';
@@ -352,6 +384,7 @@ export class GameEngine {
       leverage: bet.leverage,
       entryPrice: room.currentPrice,
       remainingMargin: bet.margin,
+      turnNumber: room.turnNumber,
     };
     player.positions.push(position);
     player.bettingReady = false;
@@ -361,28 +394,41 @@ export class GameEngine {
 
   setBettingReady(roomId: string, playerId: string): string | null {
     const room = this.rooms.get(roomId);
-    if (!room || room.phase !== 'betting') return '배팅 단계가 아닙니다';
+    if (!room || room.phase !== 'drawing') return '배팅 가능 시간이 아닙니다';
 
     const active = getActivePlayer(room);
-    if (active?.id === playerId) return '자신의 턴에는 배팅할 수 없습니다';
+    if (active?.id === playerId) return '그래프를 그리는 동안에는 배팅할 수 없습니다';
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player || player.isEliminated) return '플레이어를 찾을 수 없습니다';
 
-    player.bettingReady = true;
+    const turnBetTotal = getTurnBetTotal(player, room.turnNumber);
+    if (turnBetTotal < MIN_BET) {
+      return `이번 턴 최소 ${MIN_BET.toLocaleString()}원 이상 배팅해야 합니다 (현재 ${turnBetTotal.toLocaleString()}원)`;
+    }
 
-    const bettors = room.players.filter(
-      (p) => !p.isEliminated && p.id !== active?.id && p.isConnected
-    );
+    player.bettingReady = true;
+    this.tryStartAnimation(roomId);
+
+    return null;
+  }
+
+  private tryStartAnimation(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room || room.phase !== 'drawing') return;
+    if (!room.pathSubmitted || room.pricePath.length === 0) return;
+
+    const active = getActivePlayer(room);
+    const bettors = getBettors(room, active);
+
     if (bettors.length === 0) {
       this.startAnimation(roomId);
-      return null;
+      return;
     }
+
     if (bettors.every((p) => p.bettingReady)) {
       this.startAnimation(roomId);
     }
-
-    return null;
   }
 
   sellPosition(roomId: string, playerId: string, positionId: string, percentage: number): string | null {
@@ -445,10 +491,26 @@ export class GameEngine {
   private startDrawingPhase(room: RoomState): void {
     room.phase = 'drawing';
     room.pricePath = [];
+    room.pathSubmitted = false;
     room.animationProgress = 0;
     for (const p of room.players) {
       p.bettingReady = false;
     }
+  }
+
+  private endGame(room: RoomState): void {
+    for (const player of room.players) {
+      if (player.isEliminated) continue;
+      for (const position of [...player.positions]) {
+        const pnl = calcUnrealizedPnl(position, room.currentPrice);
+        player.balance += position.remainingMargin + pnl;
+      }
+      player.positions = [];
+    }
+
+    const winner = findWinner(room);
+    room.winnerId = winner?.id ?? null;
+    room.phase = 'game_end';
   }
 
   private startAnimation(roomId: string): void {
@@ -502,9 +564,24 @@ export class GameEngine {
 
     room.phase = 'turn_end';
 
+    if (room.turnNumber >= MAX_TURNS) {
+      setTimeout(() => {
+        const r = this.rooms.get(roomId);
+        if (!r) return;
+        this.endGame(r);
+        this.onRoomUpdate(roomId);
+      }, 3000);
+      return;
+    }
+
     const activeCount = getActivePlayers(room).length;
     if (activeCount <= 1) {
-      room.phase = 'waiting';
+      setTimeout(() => {
+        const r = this.rooms.get(roomId);
+        if (!r) return;
+        this.endGame(r);
+        this.onRoomUpdate(roomId);
+      }, 3000);
       return;
     }
 

@@ -19,10 +19,10 @@ interface Props {
 
 const PHASE_LABELS: Record<string, string> = {
   waiting: '대기 중',
-  drawing: '그래프 그리기',
-  betting: '배팅 중',
+  drawing: '그래프 그리기 & 배팅',
   animating: '거래 진행 중',
   turn_end: '턴 종료',
+  game_end: '게임 종료',
 };
 
 export default function GameRoom({ room, playerId, error, onDismissError, onLeave }: Props) {
@@ -69,9 +69,14 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
     }
   };
 
+  const turnBetTotal = (me?.positions ?? [])
+    .filter((p) => p.turnNumber === room.turnNumber)
+    .reduce((sum, p) => sum + p.margin, 0);
+
   const showDrawing = room.phase === 'drawing' && isActivePlayer && !isSpectator;
-  const showBetting = room.phase === 'betting' && !isActivePlayer && !isSpectator;
+  const showBetting = room.phase === 'drawing' && !isActivePlayer && !isSpectator && (me?.balance ?? 0) >= 100_000;
   const showSelling = room.phase === 'animating' && !isSpectator && (me?.positions.length ?? 0) > 0;
+  const winner = room.winnerId ? room.players.find((p) => p.id === room.winnerId) : null;
 
   useEffect(() => {
     if (room.phase === 'animating' && (me?.positions.length ?? 0) > 0) {
@@ -91,7 +96,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
             <div>
               <h1 className="text-sm font-bold">{room.name}</h1>
               <p className="text-[10px] text-[var(--color-text-secondary)]">
-                턴 {room.turnNumber} · {PHASE_LABELS[room.phase]}
+                턴 {room.turnNumber}/{room.maxTurns} · {PHASE_LABELS[room.phase]}
               </p>
             </div>
           </div>
@@ -184,28 +189,11 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
         <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 px-4 py-2 text-center text-xs">
           {isActivePlayer ? (
             <span className="text-[var(--color-accent-yellow)] font-semibold">
-              당신의 턴! 24시간 그래프를 그려주세요 (±50% 범위)
-            </span>
-          ) : (
-            <span className="text-[var(--color-text-secondary)]">
-              <span className="text-[var(--color-accent-yellow)]">
-                {room.players.find((p) => p.id === room.activePlayerId)?.nickname}
-              </span>
-              님이 그래프를 그리는 중...
-            </span>
-          )}
-        </div>
-      )}
-
-      {room.phase === 'betting' && (
-        <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-blue)]/30 bg-[var(--color-accent-blue)]/5 px-4 py-2 text-center text-xs">
-          {isActivePlayer ? (
-            <span className="text-[var(--color-text-secondary)]">
-              그래프는 비밀! 다른 플레이어들의 배팅을 기다리는 중...
+              당신의 턴! 그래프를 그리는 동안 다른 플레이어들은 배팅 중입니다
             </span>
           ) : (
             <span className="text-[var(--color-accent-blue)] font-semibold">
-              🔒 그래프 비공개 — 모른 채로 배팅하세요! 모두 완료하면 그래프가 조금씩 그려집니다
+              🔒 그래프 비공개 — 지금 바로 배팅하세요! (최소 10만원 필수, 스킵 불가)
             </span>
           )}
         </div>
@@ -221,7 +209,16 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
 
       {room.phase === 'turn_end' && (
         <div className="mx-4 mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-center text-xs text-[var(--color-text-secondary)]">
-          턴 종료! 다음 턴 준비 중...
+          {room.turnNumber >= room.maxTurns ? '마지막 턴 종료! 결과 집계 중...' : '턴 종료! 다음 턴 준비 중...'}
+        </div>
+      )}
+
+      {room.phase === 'game_end' && winner && (
+        <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-yellow)]/50 bg-[var(--color-accent-yellow)]/10 px-4 py-3 text-center">
+          <p className="text-lg font-bold text-[var(--color-accent-yellow)]">🏆 게임 종료!</p>
+          <p className="mt-1 text-sm">
+            우승: <span className="font-bold">{winner.nickname}</span> ({formatKRW(winner.totalEquity)})
+          </p>
         </div>
       )}
 
@@ -229,7 +226,33 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Chart area */}
         <div className="flex flex-1 flex-col min-w-0">
-          {room.phase === 'waiting' && !room.gameStarted ? (
+          {room.phase === 'game_end' ? (
+            <div className="flex flex-1 items-center justify-center bg-[var(--color-bg-secondary)]">
+              <div className="rounded-xl border border-[var(--color-accent-yellow)]/40 p-8 text-center">
+                <p className="text-4xl">🏆</p>
+                <h2 className="mt-4 text-xl font-bold">{room.maxTurns}턴 종료!</h2>
+                {winner ? (
+                  <>
+                    <p className="mt-4 text-2xl font-bold text-[var(--color-accent-yellow)]">{winner.nickname} 승리</p>
+                    <p className="mt-2 font-mono text-lg">{formatKRW(winner.totalEquity)}</p>
+                  </>
+                ) : (
+                  <p className="mt-4 text-[var(--color-text-secondary)]">우승자 없음</p>
+                )}
+                <div className="mt-8 space-y-2 text-left">
+                  <p className="text-xs font-semibold text-[var(--color-text-secondary)]">최종 순위</p>
+                  {[...room.players]
+                    .sort((a, b) => b.totalEquity - a.totalEquity)
+                    .map((p, i) => (
+                      <div key={p.id} className="flex justify-between text-sm">
+                        <span>{i + 1}. {p.nickname} {p.id === playerId && '(나)'}</span>
+                        <span className="font-mono">{formatKRW(p.totalEquity)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          ) : room.phase === 'waiting' && !room.gameStarted ? (
             <div className="flex flex-1 items-center justify-center bg-[var(--color-bg-secondary)]">
               <div className="rounded-xl border border-[var(--color-border)] p-8 text-center">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-accent-yellow)]/10">
@@ -301,7 +324,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                     : 'text-[var(--color-text-secondary)]'
                 }`}
               >
-                {room.phase === 'betting' ? '배팅' : room.phase === 'drawing' ? '정보' : '거래'}
+                {room.phase === 'drawing' ? '배팅' : room.phase === 'animating' ? '거래' : '정보'}
               </button>
               <button
                 onClick={() => setSidePanel('sell')}
@@ -338,10 +361,15 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
             ) : showBetting ? (
               <BettingPanel
                 balance={me?.balance ?? 0}
+                turnBetTotal={turnBetTotal}
                 onBet={handleBet}
                 onReady={handleReady}
                 bettingReady={me?.bettingReady}
               />
+            ) : room.phase === 'drawing' && !isActivePlayer && !isSpectator && (me?.balance ?? 0) < 100_000 ? (
+              <div className="p-4 text-center text-sm text-[var(--color-accent-red)]">
+                잔액 부족 (10만원 미만) — 이번 턴 배팅 불가
+              </div>
             ) : showDrawing && !isActivePlayer ? (
               <div className="p-4">
                 <PlayerList
@@ -358,7 +386,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                 </p>
                 {!isSpectator && (
                   <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                    배팅하지 않으면 이번 턴을 패스합니다
+                    이번 턴 배팅하지 않았습니다
                   </p>
                 )}
               </div>
