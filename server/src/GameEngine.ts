@@ -93,6 +93,23 @@ function findWinner(room: RoomState): Player | null {
   return best;
 }
 
+function easeInOutSine(t: number): number {
+  return -(Math.cos(Math.PI * t) - 1) / 2;
+}
+
+function interpolatePrice(path: PricePoint[], progress: number): number {
+  if (path.length === 0) return STARTING_PRICE;
+  if (path.length === 1) return path[0].price;
+
+  const exactIdx = progress * (path.length - 1);
+  const lo = Math.floor(exactIdx);
+  const hi = Math.min(lo + 1, path.length - 1);
+  const frac = exactIdx - lo;
+  const priceLo = path[lo]?.price ?? path[0].price;
+  const priceHi = path[hi]?.price ?? priceLo;
+  return priceLo + (priceHi - priceLo) * frac;
+}
+
 function getMinMaxPrice(currentPrice: number): { min: number; max: number } {
   return {
     min: currentPrice * (1 - MAX_PRICE_CHANGE),
@@ -153,7 +170,7 @@ function getVisiblePricePath(room: RoomState): PricePoint[] {
   const total = room.pricePath.length;
   if (total <= 1) return room.pricePath;
 
-  const maxIdx = Math.max(1, Math.floor(Math.pow(room.animationProgress, 1.2) * (total - 1)));
+  const maxIdx = Math.max(1, Math.ceil(room.animationProgress * (total - 1)));
   return room.pricePath.slice(0, maxIdx + 1);
 }
 
@@ -380,12 +397,18 @@ export class GameEngine {
 
   placeBet(roomId: string, playerId: string, bet: BetRequest): string | null {
     const room = this.rooms.get(roomId);
-    if (!room || (room.phase !== 'drawing' && room.phase !== 'betting')) {
+    const canBetInPhase =
+      room?.phase === 'drawing' || room?.phase === 'betting' || room?.phase === 'animating';
+    if (!room || !canBetInPhase) {
       return '배팅 가능 시간이 아닙니다';
     }
 
     const active = getActivePlayer(room);
-    if (active?.id === playerId) return '그래프를 그리는 동안에는 배팅할 수 없습니다';
+    if (active?.id === playerId) {
+      return room.phase === 'animating'
+        ? '그래프를 그린 턴에는 매매할 수 없습니다'
+        : '그래프를 그리는 동안에는 배팅할 수 없습니다';
+    }
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player || player.isEliminated) return '플레이어를 찾을 수 없습니다';
@@ -405,7 +428,9 @@ export class GameEngine {
       turnNumber: room.turnNumber,
     };
     player.positions.push(position);
-    player.bettingReady = false;
+    if (room.phase !== 'animating') {
+      player.bettingReady = false;
+    }
 
     return null;
   }
@@ -454,10 +479,10 @@ export class GameEngine {
 
   sellPosition(roomId: string, playerId: string, positionId: string, percentage: number): string | null {
     const room = this.rooms.get(roomId);
-    if (!room || room.phase !== 'animating') return '애니메이션 중에만 매도할 수 있습니다';
+    if (!room || room.phase !== 'animating') return '그래프 진행 중에만 매도할 수 있습니다';
 
     const active = getActivePlayer(room);
-    if (active?.id === playerId) return '자신이 그린 턴에는 매도할 수 없습니다';
+    if (active?.id === playerId) return '그래프를 그린 턴에는 매매할 수 없습니다';
 
     if (percentage < 10 || percentage > 100) return '매도 비율은 10%~100% 사이여야 합니다';
 
@@ -558,11 +583,9 @@ export class GameEngine {
 
       const elapsed = Date.now() - startTime;
       const linear = Math.min(1, elapsed / ANIMATION_DURATION_MS);
-      const progress = linear * linear * (3 - 2 * linear);
+      const progress = easeInOutSine(linear);
       r.animationProgress = progress;
-
-      const idx = Math.floor(progress * (r.pricePath.length - 1));
-      r.currentPrice = r.pricePath[idx]?.price ?? r.currentPrice;
+      r.currentPrice = interpolatePrice(r.pricePath, progress);
 
       this.checkLiquidations(r);
 
@@ -572,7 +595,7 @@ export class GameEngine {
       }
 
       this.onRoomUpdate(roomId);
-    }, 200);
+    }, 100);
 
     this.animationTimers.set(roomId, timer);
   }

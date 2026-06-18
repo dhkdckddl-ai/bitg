@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { socketService, getInviteLink } from '../socket';
-import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, STARTING_BALANCE, STARTING_PRICE, isBettingPhase } from '../types';
+import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, STARTING_BALANCE, STARTING_PRICE, MIN_BET, isBettingPhase } from '../types';
 import TradingChart from './TradingChart';
 import DrawingCanvas from './DrawingCanvas';
 import BettingPanel from './BettingPanel';
@@ -78,25 +78,29 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
   const maxTurns = room.maxTurns ?? MAX_TURNS;
   const startingBalance = room.startingBalance ?? STARTING_BALANCE;
   const bettingPhase = isBettingPhase(room.phase);
+  const isAnimating = room.phase === 'animating';
 
   const showDrawing = bettingPhase && isActivePlayer && !isSpectator;
-  const showBetting =
+  const showPreBetting =
     bettingPhase &&
     !isActivePlayer &&
     !isSpectator &&
-    (me?.balance ?? 0) >= 100_000;
-  const canSell =
-    room.phase === 'animating' && !isSpectator && !isActivePlayer;
-  const showSelling = canSell && (me?.positions.length ?? 0) > 0;
+    (me?.balance ?? 0) >= MIN_BET;
+  const showLiveTrading =
+    isAnimating &&
+    !isActivePlayer &&
+    !isSpectator &&
+    (me?.balance ?? 0) >= MIN_BET;
+  const canSell = isAnimating && !isSpectator && !isActivePlayer;
   const winner = room.winnerId ? room.players.find((p) => p.id === room.winnerId) : null;
 
   useEffect(() => {
     if (bettingPhase) {
       setSidePanel('trade');
-    } else if (canSell && (me?.positions.length ?? 0) > 0) {
+    } else if (isAnimating && !isActivePlayer && (me?.positions.length ?? 0) > 0) {
       setSidePanel('sell');
     }
-  }, [bettingPhase, room.turnNumber, canSell, me?.positions.length]);
+  }, [bettingPhase, isAnimating, room.turnNumber, me?.positions.length]);
 
   useEffect(() => {
     if (!showDrawing) {
@@ -247,10 +251,10 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
         </div>
       )}
 
-      {room.phase === 'animating' && (
-        <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-red)]/30 bg-[var(--color-accent-red)]/5 px-4 py-2 text-center text-xs">
-          <span className="font-semibold text-[var(--color-accent-red)]">
-            📈 그래프 그리는 중 ({Math.round(room.animationProgress * 100)}%) — 언제든 10%~100% 매도 가능, 안 해도 됩니다
+      {isAnimating && (
+        <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-green)]/30 bg-[var(--color-accent-green)]/5 px-4 py-2 text-center text-xs">
+          <span className="font-semibold text-[var(--color-accent-green)]">
+            📈 그래프 진행 중 ({Math.round(room.animationProgress * 100)}%) — 다른 플레이어는 실시간 추가 매수·매도 가능 (약 75초)
           </span>
         </div>
       )}
@@ -375,7 +379,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                     : 'text-[var(--color-text-secondary)]'
                 }`}
               >
-                {bettingPhase ? '배팅' : room.phase === 'animating' ? '거래' : '정보'}
+                {isAnimating ? '매수' : bettingPhase ? '배팅' : '정보'}
               </button>
               <button
                 onClick={() => setSidePanel('sell')}
@@ -403,7 +407,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                 currentPlayerId={playerId}
                 hostId={room.hostId}
               />
-            ) : showBetting ? (
+            ) : showPreBetting && sidePanel === 'trade' ? (
               <BettingPanel
                 balance={me?.balance ?? 0}
                 turnBetTotal={turnBetTotal}
@@ -411,30 +415,42 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                 onReady={handleReady}
                 bettingReady={me?.bettingReady}
               />
+            ) : showLiveTrading && sidePanel === 'trade' ? (
+              <BettingPanel
+                balance={me?.balance ?? 0}
+                turnBetTotal={turnBetTotal}
+                onBet={handleBet}
+                onReady={handleReady}
+                liveTrading
+              />
             ) : bettingPhase && isActivePlayer ? (
               <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
                 <p>그래프를 완료해주세요</p>
-                <p className="mt-2 text-xs">자신이 그린 턴에는 배팅·매도 불가</p>
+                <p className="mt-2 text-xs">그리는 동안은 배팅 불가</p>
               </div>
-            ) : room.phase === 'animating' && sidePanel === 'sell' && !isSpectator && (me?.positions.length ?? 0) > 0 ? (
+            ) : isAnimating && isActivePlayer ? (
+              <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
+                <p>그래프를 그린 턴입니다</p>
+                <p className="mt-2 text-xs">결과를 알고 있어 매수·매도 불가 · 관전만 가능</p>
+              </div>
+            ) : isAnimating && sidePanel === 'sell' && canSell && (me?.positions.length ?? 0) > 0 ? (
               <SellPanel
                 positions={me?.positions ?? []}
                 currentPrice={room.currentPrice}
                 onSell={handleSell}
-                disabled={isActivePlayer}
               />
-            ) : room.phase === 'animating' && isActivePlayer && (me?.positions.length ?? 0) > 0 ? (
-              <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
-                <p>자신이 그린 턴에는 매도할 수 없습니다</p>
-                <p className="mt-2 text-xs">그래프가 끝난 후 다음 턴부터 매도 가능</p>
-              </div>
-            ) : bettingPhase && !isActivePlayer && !isSpectator && (me?.balance ?? 0) < 100_000 ? (
+            ) : bettingPhase && !isActivePlayer && !isSpectator && (me?.balance ?? 0) < MIN_BET ? (
               <div className="p-4 text-center text-sm text-[var(--color-accent-red)]">
                 잔액 부족 (10만원 미만) — 이번 턴 배팅 불가
               </div>
-            ) : room.phase === 'animating' && !isSpectator && (me?.positions.length ?? 0) === 0 ? (
+            ) : isAnimating && sidePanel === 'sell' && !isSpectator && (me?.positions.length ?? 0) === 0 ? (
               <div className="p-4 text-center">
-                <p className="text-sm text-[var(--color-text-secondary)]">이번 턴 포지션 없음</p>
+                <p className="text-sm text-[var(--color-text-secondary)]">보유 포지션 없음</p>
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">매수 탭에서 추가 매수 가능</p>
+              </div>
+            ) : isAnimating && sidePanel === 'trade' && !isSpectator && (me?.balance ?? 0) < MIN_BET ? (
+              <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
+                잔액 부족 (10만원 미만) — 추가 매수 불가
               </div>
             ) : isSpectator ? (
               <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">관전 중...</div>
@@ -449,7 +465,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
           </div>
 
           {/* Positions summary at bottom */}
-          {me && me.positions.length > 0 && room.phase === 'animating' && (
+          {me && me.positions.length > 0 && isAnimating && (
             <div className="border-t border-[var(--color-border)] p-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[var(--color-text-secondary)]">내 포지션</span>

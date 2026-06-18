@@ -8,6 +8,7 @@ interface Props {
   onReady: () => void;
   disabled?: boolean;
   bettingReady?: boolean;
+  liveTrading?: boolean;
 }
 
 export default function BettingPanel({
@@ -17,6 +18,7 @@ export default function BettingPanel({
   onReady,
   disabled,
   bettingReady,
+  liveTrading = false,
 }: Props) {
   const [betType, setBetType] = useState<'long' | 'short'>('long');
   const [margin, setMargin] = useState(MIN_BET);
@@ -36,19 +38,28 @@ export default function BettingPanel({
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <div className="rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 p-3 text-xs">
-        <div className="flex justify-between">
-          <span className="text-[var(--color-text-secondary)]">이번 턴 배팅액</span>
-          <span className={`font-mono font-bold ${turnBetTotal >= MIN_BET ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
-            {formatKRW(turnBetTotal)} / {formatKRW(MIN_BET)}
-          </span>
-        </div>
-        {remainingRequired > 0 && (
-          <p className="mt-1 text-[var(--color-accent-red)]">
-            {formatKRW(remainingRequired)} 더 배팅해야 완료 가능
+      {liveTrading ? (
+        <div className="rounded-lg border border-[var(--color-accent-green)]/30 bg-[var(--color-accent-green)]/5 p-3 text-xs">
+          <p className="font-semibold text-[var(--color-accent-green)]">실시간 매매</p>
+          <p className="mt-1 text-[var(--color-text-secondary)]">
+            그래프가 그려지는 동안 언제든 추가 매수·매도 가능합니다
           </p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 p-3 text-xs">
+          <div className="flex justify-between">
+            <span className="text-[var(--color-text-secondary)]">이번 턴 배팅액</span>
+            <span className={`font-mono font-bold ${turnBetTotal >= MIN_BET ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
+              {formatKRW(turnBetTotal)} / {formatKRW(MIN_BET)}
+            </span>
+          </div>
+          {remainingRequired > 0 && (
+            <p className="mt-1 text-[var(--color-accent-red)]">
+              {formatKRW(remainingRequired)} 더 배팅해야 완료 가능
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-1 rounded-lg bg-[var(--color-bg-tertiary)] p-1">
         <button
@@ -160,20 +171,22 @@ export default function BettingPanel({
             : 'bg-[var(--color-accent-red)] text-white hover:brightness-110'
         }`}
       >
-        {betType === 'long' ? '롱 매수' : '숏 매수'}
+        {betType === 'long' ? (liveTrading ? '롱 추가 매수' : '롱 매수') : (liveTrading ? '숏 추가 매수' : '숏 매수')}
       </button>
 
-      <button
-        onClick={onReady}
-        disabled={disabled || !canReady}
-        className={`w-full rounded-lg border py-3 text-sm font-semibold transition ${
-          bettingReady
-            ? 'border-[var(--color-accent-green)] bg-[var(--color-accent-green)]/10 text-[var(--color-accent-green)]'
-            : 'border-[var(--color-accent-yellow)] text-[var(--color-accent-yellow)] hover:bg-[var(--color-accent-yellow)]/10'
-        } disabled:opacity-40`}
-      >
-        {bettingReady ? '✓ 배팅 완료' : `배팅 완료 (최소 ${(MIN_BET / 10000).toFixed(0)}만원 필수)`}
-      </button>
+      {!liveTrading && (
+        <button
+          onClick={onReady}
+          disabled={disabled || !canReady}
+          className={`w-full rounded-lg border py-3 text-sm font-semibold transition ${
+            bettingReady
+              ? 'border-[var(--color-accent-green)] bg-[var(--color-accent-green)]/10 text-[var(--color-accent-green)]'
+              : 'border-[var(--color-accent-yellow)] text-[var(--color-accent-yellow)] hover:bg-[var(--color-accent-yellow)]/10'
+          } disabled:opacity-40`}
+        >
+          {bettingReady ? '✓ 배팅 완료' : `배팅 완료 (최소 ${(MIN_BET / 10000).toFixed(0)}만원 필수)`}
+        </button>
+      )}
     </div>
   );
 }
