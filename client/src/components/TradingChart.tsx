@@ -3,10 +3,8 @@ import {
   createChart,
   IChartApi,
   ISeriesApi,
-  CandlestickData,
   Time,
   ColorType,
-  CandlestickSeries,
   LineSeries,
 } from 'lightweight-charts';
 import { PricePoint } from '../types';
@@ -21,50 +19,15 @@ interface Props {
   isAnimating: boolean;
 }
 
-function generateCandlesticks(
-  pricePath: PricePoint[],
-  progress: number,
-  currentPrice: number
-): CandlestickData<Time>[] {
-  const candles: CandlestickData<Time>[] = [];
-  const totalPoints = pricePath.length || 1;
-  const visiblePoints = Math.max(2, Math.floor(totalPoints * progress));
+const DAY_SECONDS = 24 * 60 * 60;
 
-  if (pricePath.length === 0) {
-    const baseTime = Math.floor(Date.now() / 1000) - 60;
-    candles.push({
-      time: baseTime as Time,
-      open: currentPrice,
-      high: currentPrice * 1.001,
-      low: currentPrice * 0.999,
-      close: currentPrice,
-    });
-    return candles;
-  }
-
-  const groupSize = Math.max(1, Math.floor(visiblePoints / 40));
-  const baseTime = Math.floor(Date.now() / 1000) - visiblePoints * 15;
-
-  for (let i = 0; i < visiblePoints; i += groupSize) {
-    const slice = pricePath.slice(i, Math.min(i + groupSize, visiblePoints));
-    if (slice.length === 0) continue;
-
-    const prices = slice.map((p) => p.price);
-    const open = slice[0].price;
-    const close = slice[slice.length - 1].price;
-    const high = Math.max(...prices);
-    const low = Math.min(...prices);
-
-    candles.push({
-      time: (baseTime + Math.floor(i / groupSize) * 15) as Time,
-      open,
-      high,
-      low,
-      close,
-    });
-  }
-
-  return candles;
+function pathToLineData(path: PricePoint[]): { time: Time; value: number }[] {
+  if (path.length === 0) return [];
+  const baseTime = Math.floor(Date.now() / 1000) - DAY_SECONDS;
+  return path.map((p, i) => ({
+    time: (baseTime + Math.floor(p.t * DAY_SECONDS)) as Time,
+    value: p.price,
+  }));
 }
 
 export default function TradingChart({
@@ -78,8 +41,14 @@ export default function TradingChart({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const animationStartRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (phase === 'animating' && animationProgress === 0) {
+      animationStartRef.current = Date.now();
+    }
+  }, [phase, animationProgress]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -101,36 +70,29 @@ export default function TradingChart({
       },
       rightPriceScale: {
         borderColor: '#2b3139',
-        scaleMargins: { top: 0.1, bottom: 0.1 },
+        scaleMargins: { top: 0.12, bottom: 0.12 },
       },
       timeScale: {
         borderColor: '#2b3139',
         timeVisible: true,
         secondsVisible: false,
+        fixLeftEdge: true,
+        fixRightEdge: false,
       },
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
     });
 
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#0ecb81',
-      downColor: '#f6465d',
-      borderUpColor: '#0ecb81',
-      borderDownColor: '#f6465d',
-      wickUpColor: '#0ecb81',
-      wickDownColor: '#f6465d',
-    });
-
     const lineSeries = chart.addSeries(LineSeries, {
       color: '#3861fb',
       lineWidth: 2,
-      visible: false,
-      priceLineVisible: false,
-      lastValueVisible: false,
+      priceLineVisible: true,
+      lastValueVisible: true,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 6,
     });
 
     chartRef.current = chart;
-    seriesRef.current = candleSeries;
     lineSeriesRef.current = lineSeries;
 
     const handleResize = () => {
@@ -149,49 +111,48 @@ export default function TradingChart({
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
-      seriesRef.current = null;
       lineSeriesRef.current = null;
     };
   }, []);
 
   const updateChart = useCallback(() => {
-    if (!seriesRef.current || !lineSeriesRef.current || !chartRef.current) return;
+    if (!lineSeriesRef.current || !chartRef.current) return;
 
-    const progress = phase === 'animating' ? animationProgress : phase === 'turn_end' ? 1 : 0;
+    const isDrawingPhase = phase === 'animating' || phase === 'turn_end';
 
-    if (phase === 'drawing' || phase === 'betting') {
-      lineSeriesRef.current.applyOptions({ visible: true });
-      seriesRef.current.applyOptions({ visible: false });
-
-      if (pricePath.length > 0) {
-        const baseTime = Math.floor(Date.now() / 1000) - pricePath.length * 15;
-        const lineData = pricePath.map((p, i) => ({
-          time: (baseTime + i * 15) as Time,
-          value: p.price,
-        }));
-        lineSeriesRef.current.setData(lineData);
-      } else {
-        lineSeriesRef.current.setData([]);
-      }
+    if (isDrawingPhase && pricePath.length > 0) {
+      const lineData = pathToLineData(pricePath);
+      lineSeriesRef.current.setData(lineData);
+      lineSeriesRef.current.applyOptions({
+        color: '#3861fb',
+        lineWidth: 2.5,
+      });
     } else {
-      lineSeriesRef.current.applyOptions({ visible: false });
-      seriesRef.current.applyOptions({ visible: true });
-
-      const candles = generateCandlesticks(pricePath, progress || (phase === 'waiting' ? 0 : 1), currentPrice);
-      seriesRef.current.setData(candles);
+      const baseTime = Math.floor(Date.now() / 1000) - DAY_SECONDS;
+      lineSeriesRef.current.setData([
+        { time: baseTime as Time, value: currentPrice },
+        { time: (baseTime + DAY_SECONDS) as Time, value: currentPrice },
+      ]);
+      lineSeriesRef.current.applyOptions({
+        color: '#848e9c',
+        lineWidth: 1,
+      });
     }
 
-    chartRef.current.timeScale().scrollToRealTime();
-  }, [currentPrice, pricePath, animationProgress, phase]);
+    if (isDrawingPhase && pricePath.length > 1) {
+      chartRef.current.timeScale().fitContent();
+    }
+  }, [currentPrice, pricePath, phase]);
 
   useEffect(() => {
     updateChart();
   }, [updateChart]);
 
-  const priceChange = pricePath.length > 1
-    ? ((currentPrice - pricePath[0].price) / pricePath[0].price) * 100
-    : 0;
-
+  const startPrice = pricePath[0]?.price ?? currentPrice;
+  const priceChange =
+    phase === 'animating' || phase === 'turn_end'
+      ? ((currentPrice - startPrice) / startPrice) * 100
+      : 0;
   const isUp = priceChange >= 0;
 
   return (
@@ -210,12 +171,22 @@ export default function TradingChart({
             <span className={`font-mono text-2xl font-bold ${isUp ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
               ₩{Math.round(currentPrice).toLocaleString('ko-KR')}
             </span>
-            <span className={`font-mono text-sm ${isUp ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
-              {isUp ? '+' : ''}{priceChange.toFixed(2)}%
-            </span>
+            {(phase === 'animating' || phase === 'turn_end') && (
+              <span className={`font-mono text-sm ${isUp ? 'text-[var(--color-accent-green)]' : 'text-[var(--color-accent-red)]'}`}>
+                {isUp ? '+' : ''}{priceChange.toFixed(2)}%
+              </span>
+            )}
           </div>
         </div>
         <div className="ml-auto flex gap-6 text-xs text-[var(--color-text-secondary)]">
+          {isAnimating && (
+            <div>
+              <span className="block text-[10px] uppercase">그래프 진행</span>
+              <span className="font-mono text-[var(--color-accent-yellow)]">
+                {Math.round(animationProgress * 100)}%
+              </span>
+            </div>
+          )}
           <div>
             <span className="block text-[10px] uppercase">24h High</span>
             <span className="font-mono text-[var(--color-accent-green)]">₩{Math.round(maxPrice).toLocaleString('ko-KR')}</span>
@@ -226,7 +197,16 @@ export default function TradingChart({
           </div>
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0" />
+      <div ref={containerRef} className="relative flex-1 min-h-0">
+        {phase === 'betting' && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#12161c]/60">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/90 px-6 py-4 text-center">
+              <p className="text-sm font-semibold text-[var(--color-accent-blue)]">🔒 그래프 비공개</p>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">배팅 완료 후 그래프가 그려지기 시작합니다</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { socketService, getInviteLink } from '../socket';
 import { PublicRoomState, formatKRW, formatPrice } from '../types';
 import TradingChart from './TradingChart';
@@ -72,6 +72,12 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
   const showDrawing = room.phase === 'drawing' && isActivePlayer && !isSpectator;
   const showBetting = room.phase === 'betting' && !isActivePlayer && !isSpectator;
   const showSelling = room.phase === 'animating' && !isSpectator && (me?.positions.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (room.phase === 'animating' && (me?.positions.length ?? 0) > 0) {
+      setSidePanel('sell');
+    }
+  }, [room.phase, me?.positions.length]);
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg-primary)]">
@@ -194,12 +200,22 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
       {room.phase === 'betting' && (
         <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-blue)]/30 bg-[var(--color-accent-blue)]/5 px-4 py-2 text-center text-xs">
           {isActivePlayer ? (
-            <span className="text-[var(--color-text-secondary)]">다른 플레이어들의 배팅을 기다리는 중...</span>
+            <span className="text-[var(--color-text-secondary)]">
+              그래프는 비밀! 다른 플레이어들의 배팅을 기다리는 중...
+            </span>
           ) : (
             <span className="text-[var(--color-accent-blue)] font-semibold">
-              배팅하세요! 최소 10만원, 배팅 완료 후 그래프가 시작됩니다
+              🔒 그래프 비공개 — 모른 채로 배팅하세요! 모두 완료하면 그래프가 조금씩 그려집니다
             </span>
           )}
+        </div>
+      )}
+
+      {room.phase === 'animating' && (
+        <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-red)]/30 bg-[var(--color-accent-red)]/5 px-4 py-2 text-center text-xs">
+          <span className="font-semibold text-[var(--color-accent-red)]">
+            📈 그래프 그리는 중 ({Math.round(room.animationProgress * 100)}%) — 언제든 10%~100% 매도 가능, 안 해도 됩니다
+          </span>
         </div>
       )}
 

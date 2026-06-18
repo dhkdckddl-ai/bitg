@@ -49,11 +49,17 @@ export default function App() {
 
   if (!playerId) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--color-accent-yellow)] border-t-transparent" />
-          <p className="text-[var(--color-text-secondary)]">서버 연결 중...</p>
-        </div>
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--color-accent-yellow)] border-t-transparent" />
+        <p className="text-[var(--color-text-secondary)]">서버 연결 중...</p>
+        <p className="max-w-md text-xs text-[var(--color-text-secondary)]">
+          Render 무료 서버는 첫 접속 시 30~60초 걸릴 수 있습니다.
+        </p>
+        {error && (
+          <div className="max-w-md rounded-lg border border-[var(--color-accent-red)]/30 bg-[var(--color-accent-red)]/10 px-4 py-3 text-sm text-[var(--color-accent-red)]">
+            {error}
+          </div>
+        )}
       </div>
     );
   }

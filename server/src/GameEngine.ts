@@ -110,6 +110,20 @@ function toPublicPlayer(player: Player, currentPrice: number): PublicPlayer {
   };
 }
 
+function getVisiblePricePath(room: RoomState): PricePoint[] {
+  if (room.phase === 'drawing' || room.phase === 'betting' || room.phase === 'waiting') {
+    return [];
+  }
+  if (room.pricePath.length === 0) return [];
+  if (room.phase === 'turn_end') return room.pricePath;
+
+  const total = room.pricePath.length;
+  if (total <= 1) return room.pricePath;
+
+  const maxIdx = Math.max(1, Math.floor(room.animationProgress * (total - 1)));
+  return room.pricePath.slice(0, maxIdx + 1);
+}
+
 export function toPublicRoomState(room: RoomState): PublicRoomState {
   const active = getActivePlayer(room);
   const { min, max } = getMinMaxPrice(room.currentPrice);
@@ -122,7 +136,7 @@ export function toPublicRoomState(room: RoomState): PublicRoomState {
     turnIndex: room.turnIndex,
     activePlayerId: active?.id ?? null,
     currentPrice: room.currentPrice,
-    pricePath: room.pricePath,
+    pricePath: getVisiblePricePath(room),
     animationProgress: room.animationProgress,
     turnNumber: room.turnNumber,
     gameStarted: room.gameStarted,

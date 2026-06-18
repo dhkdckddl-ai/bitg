@@ -32,6 +32,7 @@ class SocketService {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
 
     this.socket.on('connect', () => {
@@ -41,6 +42,12 @@ class SocketService {
     this.socket.on('connected', ({ playerId }) => {
       storePlayerId(playerId);
       handlers.onConnected({ playerId });
+    });
+
+    this.socket.on('connect_error', () => {
+      handlers.onError({
+        message: `서버 연결 실패 (${SOCKET_URL}). Render 서버가 켜져 있는지, Netlify 환경변수 VITE_SOCKET_URL 설정 후 재배포했는지 확인하세요.`,
+      });
     });
 
     this.socket.on('roomsList', handlers.onRoomsList);
