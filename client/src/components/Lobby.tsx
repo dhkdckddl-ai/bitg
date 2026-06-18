@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { socketService } from '../socket';
 import { RoomListItem } from '../types';
+import VersionBadge from './VersionBadge';
 
 interface Props {
   rooms: RoomListItem[];
@@ -53,12 +54,15 @@ export default function Lobby({
               <p className="text-xs text-[var(--color-text-secondary)]">비트코인 트레이딩 배틀</p>
             </div>
           </div>
-          <button
-            onClick={onRefresh}
-            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
-          >
-            새로고침
-          </button>
+          <div className="flex items-center gap-3">
+            <VersionBadge />
+            <button
+              onClick={onRefresh}
+              className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+            >
+              새로고침
+            </button>
+          </div>
         </div>
       </header>
 
@@ -147,6 +151,7 @@ export default function Lobby({
                 <li>• 그래프 재생(약 75초) 중 다른 플레이어는 실시간 추가 매수·매도 가능</li>
                 <li>• 그래프를 그린 사람은 해당 턴 매매 불가</li>
                 <li>• 턴마다 최소 10만원 배팅 필수 (스킵 불가)</li>
+                <li>• 진행 중인 방은 관전 입장 가능 (다음 턴부터 참여)</li>
                 <li>• 잔액 0원 시 탈락 → 관전 모드</li>
               </ul>
             </div>
@@ -186,13 +191,22 @@ export default function Lobby({
                       <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
                         방장: {room.hostNickname} · {room.playerCount}/{room.maxPlayers}명 · ID: {room.id}
                       </p>
+                      {room.gameStarted && (
+                        <p className="mt-1 text-xs text-[var(--color-accent-blue)]">
+                          진행 중 · 턴 {room.turnNumber}/{room.maxTurns}
+                        </p>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleJoin(room.id)}
-                        className="rounded-lg bg-[var(--color-accent-green)] px-5 py-2 text-sm font-medium text-white transition hover:brightness-110"
+                        className={`rounded-lg px-5 py-2 text-sm font-medium text-white transition hover:brightness-110 ${
+                          room.gameStarted
+                            ? 'bg-[var(--color-accent-blue)]'
+                            : 'bg-[var(--color-accent-green)]'
+                        }`}
                       >
-                        입장
+                        {room.gameStarted ? '관전 입장' : '입장'}
                       </button>
                     </div>
                   </div>

@@ -41,7 +41,7 @@ export function calcTotalEquity(player: Player, currentPrice: number): number {
   return player.balance + calcPlayerUnrealizedPnl(player, currentPrice);
 }
 
-function createPlayer(id: string, nickname: string): Player {
+function createPlayer(id: string, nickname: string, joinsFromTurn = 1): Player {
   return {
     id,
     nickname,
@@ -51,11 +51,16 @@ function createPlayer(id: string, nickname: string): Player {
     bettingReady: false,
     isConnected: true,
     disconnectedAt: null,
+    joinsFromTurn,
   };
 }
 
+export function canPlayerParticipate(player: Player, turnNumber: number): boolean {
+  return !player.isEliminated && player.joinsFromTurn <= turnNumber;
+}
+
 function getActivePlayers(room: RoomState): Player[] {
-  return room.players.filter((p) => !p.isEliminated);
+  return room.players.filter((p) => canPlayerParticipate(p, room.turnNumber));
 }
 
 function getActivePlayer(room: RoomState): Player | null {
@@ -66,7 +71,8 @@ function getActivePlayer(room: RoomState): Player | null {
 
 function getRequiredBettors(room: RoomState, active: Player | null): Player[] {
   return room.players.filter((p) => {
-    if (p.isEliminated || !p.isConnected || p.id === active?.id) return false;
+    if (!canPlayerParticipate(p, room.turnNumber)) return false;
+    if (!p.isConnected || p.id === active?.id) return false;
     const turnBet = getTurnBetTotal(p, room.turnNumber);
     return turnBet >= MIN_BET || p.balance >= MIN_BET;
   });
@@ -155,6 +161,7 @@ function toPublicPlayer(player: Player, currentPrice: number): PublicPlayer {
     unrealizedPnl,
     totalEquity: player.balance + unrealizedPnl,
     isConnected: player.isConnected,
+    joinsFromTurn: player.joinsFromTurn,
   };
 }
 
@@ -256,16 +263,19 @@ export class GameEngine {
       return { room };
     }
 
-    if (room.gameStarted) return { error: '이미 시작된 게임에는 입장할 수 없습니다' };
+    if (room.phase === 'game_end') {
+      return { error: '이미 종료된 게임입니다' };
+    }
 
     if (room.players.length >= MAX_PLAYERS_PER_ROOM) {
       return { error: `방이 가득 찼습니다 (최대 ${MAX_PLAYERS_PER_ROOM}명)` };
     }
-    if (room.players.some((p) => p.nickname === nickname && p.isConnected)) {
+    if (room.players.some((p) => p.nickname === nickname && p.isConnected && p.id !== playerId)) {
       return { error: '이미 사용 중인 닉네임입니다' };
     }
 
-    room.players.push(createPlayer(playerId, nickname));
+    const joinsFromTurn = room.gameStarted ? room.turnNumber + 1 : 1;
+    room.players.push(createPlayer(playerId, nickname, joinsFromTurn));
     this.playerRoom.set(playerId, roomId);
     return { room };
   }
@@ -357,13 +367,25 @@ export class GameEngine {
     return roomId ? this.rooms.get(roomId) : undefined;
   }
 
-  getAllRooms(): { id: string; name: string; playerCount: number; maxPlayers: number; hostNickname: string }[] {
+  getAllRooms(): {
+    id: string;
+    name: string;
+    playerCount: number;
+    maxPlayers: number;
+    hostNickname: string;
+    gameStarted: boolean;
+    turnNumber: number;
+    maxTurns: number;
+  }[] {
     return Array.from(this.rooms.values()).map((r) => ({
       id: r.id,
       name: r.name,
       playerCount: r.players.filter((p) => p.isConnected).length,
       maxPlayers: MAX_PLAYERS_PER_ROOM,
       hostNickname: r.players.find((p) => p.id === r.hostId)?.nickname ?? '',
+      gameStarted: r.gameStarted,
+      turnNumber: r.turnNumber,
+      maxTurns: MAX_TURNS,
     }));
   }
 
@@ -381,6 +403,7 @@ export class GameEngine {
         player.balance = STARTING_BALANCE;
         player.positions = [];
         player.bettingReady = false;
+        player.joinsFromTurn = 1;
       }
     }
 
@@ -421,6 +444,9 @@ export class GameEngine {
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player || player.isEliminated) return '플레이어를 찾을 수 없습니다';
+    if (!canPlayerParticipate(player, room.turnNumber)) {
+      return `턴 ${player.joinsFromTurn}부터 참여할 수 있습니다 (현재 관전 중)`;
+    }
 
     if (bet.margin < MIN_BET) return `최소 ${MIN_BET.toLocaleString()}원 이상 배팅해야 합니다`;
     if (bet.leverage < 1 || bet.leverage > MAX_LEVERAGE) return `레버리지는 1~${MAX_LEVERAGE}배까지 가능합니다`;
@@ -455,6 +481,9 @@ export class GameEngine {
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player || player.isEliminated) return '플레이어를 찾을 수 없습니다';
+    if (!canPlayerParticipate(player, room.turnNumber)) {
+      return `턴 ${player.joinsFromTurn}부터 참여할 수 있습니다 (현재 관전 중)`;
+    }
 
     const turnBetTotal = getTurnBetTotal(player, room.turnNumber);
     if (turnBetTotal < MIN_BET) {
@@ -497,6 +526,9 @@ export class GameEngine {
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player || player.isEliminated) return '플레이어를 찾을 수 없습니다';
+    if (!canPlayerParticipate(player, room.turnNumber)) {
+      return `턴 ${player.joinsFromTurn}부터 참여할 수 있습니다 (현재 관전 중)`;
+    }
 
     const position = player.positions.find((p) => p.id === positionId);
     if (!position) return '포지션을 찾을 수 없습니다';

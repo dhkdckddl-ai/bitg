@@ -37,6 +37,7 @@ export interface PublicPlayer {
   unrealizedPnl: number;
   totalEquity: number;
   isConnected: boolean;
+  joinsFromTurn: number;
 }
 
 export interface PublicRoomState {
@@ -67,6 +68,17 @@ export interface RoomListItem {
   playerCount: number;
   maxPlayers: number;
   hostNickname: string;
+  gameStarted: boolean;
+  turnNumber: number;
+  maxTurns: number;
+}
+
+export function canPlayerParticipate(
+  player: Pick<PublicPlayer, 'isEliminated' | 'joinsFromTurn'>,
+  turnNumber: number
+): boolean {
+  const fromTurn = player.joinsFromTurn ?? 1;
+  return !player.isEliminated && fromTurn <= turnNumber;
 }
 
 export interface ChatMessage {

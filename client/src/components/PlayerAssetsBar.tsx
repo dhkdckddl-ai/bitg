@@ -1,4 +1,4 @@
-import { PublicPlayer, formatKRW } from '../types';
+import { PublicPlayer, formatKRW, canPlayerParticipate } from '../types';
 
 interface Props {
   players: PublicPlayer[];
@@ -6,6 +6,7 @@ interface Props {
   currentPlayerId: string;
   hostId: string;
   startingBalance: number;
+  turnNumber: number;
 }
 
 export default function PlayerAssetsBar({
@@ -14,6 +15,7 @@ export default function PlayerAssetsBar({
   currentPlayerId,
   hostId,
   startingBalance,
+  turnNumber,
 }: Props) {
   const sorted = [...players].sort((a, b) => b.totalEquity - a.totalEquity);
 
@@ -32,6 +34,8 @@ export default function PlayerAssetsBar({
           const isHost = player.id === hostId;
           const pnl = player.totalEquity - startingBalance;
           const pnlPct = startingBalance > 0 ? (pnl / startingBalance) * 100 : 0;
+
+          const isWaiting = !canPlayerParticipate(player, turnNumber);
 
           return (
             <div
@@ -52,6 +56,11 @@ export default function PlayerAssetsBar({
                 {isActive && (
                   <span className="rounded bg-[var(--color-accent-yellow)] px-1 py-0.5 text-[8px] font-bold text-black">
                     TURN
+                  </span>
+                )}
+                {isWaiting && !player.isEliminated && (
+                  <span className="rounded bg-[var(--color-accent-blue)]/20 px-1 py-0.5 text-[8px] text-[var(--color-accent-blue)]">
+                    T{player.joinsFromTurn}
                   </span>
                 )}
               </div>

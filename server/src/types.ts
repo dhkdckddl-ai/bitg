@@ -37,6 +37,7 @@ export interface Player {
   bettingReady: boolean;
   isConnected: boolean;
   disconnectedAt: number | null;
+  joinsFromTurn: number;
 }
 
 export interface RoomState {
@@ -79,6 +80,7 @@ export interface PublicPlayer {
   unrealizedPnl: number;
   totalEquity: number;
   isConnected: boolean;
+  joinsFromTurn: number;
 }
 
 export interface PublicRoomState {

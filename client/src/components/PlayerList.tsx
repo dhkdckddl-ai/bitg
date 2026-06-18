@@ -1,13 +1,14 @@
-import { PublicPlayer, formatKRW } from '../types';
+import { PublicPlayer, formatKRW, canPlayerParticipate } from '../types';
 
 interface Props {
   players: PublicPlayer[];
   activePlayerId: string | null;
   currentPlayerId: string;
   hostId: string;
+  turnNumber: number;
 }
 
-export default function PlayerList({ players, activePlayerId, currentPlayerId, hostId }: Props) {
+export default function PlayerList({ players, activePlayerId, currentPlayerId, hostId, turnNumber }: Props) {
   const sorted = [...players].sort((a, b) => b.totalEquity - a.totalEquity);
 
   return (
@@ -21,12 +22,14 @@ export default function PlayerList({ players, activePlayerId, currentPlayerId, h
           const isMe = player.id === currentPlayerId;
           const isHost = player.id === hostId;
 
+          const isWaiting = !canPlayerParticipate(player, turnNumber);
+
           return (
             <div
               key={player.id}
               className={`border-b border-[var(--color-border)] px-4 py-3 transition ${
                 isActive ? 'bg-[var(--color-accent-yellow)]/5' : ''
-              } ${player.isEliminated ? 'opacity-50' : ''}`}
+              } ${player.isEliminated || isWaiting ? 'opacity-70' : ''}`}
             >
               <div className="flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold text-[var(--color-text-secondary)]">
@@ -45,6 +48,11 @@ export default function PlayerList({ players, activePlayerId, currentPlayerId, h
                 {player.isEliminated && (
                   <span className="rounded bg-[var(--color-accent-red)]/20 px-1.5 py-0.5 text-[9px] text-[var(--color-accent-red)]">
                     탈락
+                  </span>
+                )}
+                {isWaiting && !player.isEliminated && (
+                  <span className="rounded bg-[var(--color-accent-blue)]/20 px-1.5 py-0.5 text-[9px] text-[var(--color-accent-blue)]">
+                    턴{player.joinsFromTurn} 참여
                   </span>
                 )}
                 {!player.isConnected && !player.isEliminated && (

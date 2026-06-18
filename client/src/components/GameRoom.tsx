@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { socketService, getInviteLink } from '../socket';
-import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, STARTING_BALANCE, STARTING_PRICE, MIN_BET, isBettingPhase, ChatMessage } from '../types';
+import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, STARTING_BALANCE, STARTING_PRICE, MIN_BET, isBettingPhase, ChatMessage, canPlayerParticipate } from '../types';
 import TradingChart from './TradingChart';
 import DrawingCanvas from './DrawingCanvas';
 import BettingPanel from './BettingPanel';
@@ -10,6 +10,7 @@ import OrderBook from './OrderBook';
 import TradeHistory from './TradeHistory';
 import PlayerAssetsBar from './PlayerAssetsBar';
 import ChatPanel from './ChatPanel';
+import VersionBadge from './VersionBadge';
 
 interface Props {
   room: PublicRoomState;
@@ -47,7 +48,8 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
   const isHost = room.hostId === playerId;
   const isActivePlayer = room.activePlayerId === playerId;
   const isEliminated = me?.isEliminated ?? false;
-  const isSpectator = isEliminated;
+  const isWaitingToPlay = me ? !canPlayerParticipate(me, room.turnNumber) : false;
+  const isSpectator = isEliminated || isWaitingToPlay;
 
   const handleSubmitPath = (path: { t: number; price: number }[]) => {
     setPathSubmitting(true);
@@ -88,7 +90,8 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
   const showDrawing = bettingPhase && isActivePlayer && !isSpectator && !room.pathSubmitted;
   const waitingForBettors = bettingPhase && isActivePlayer && room.pathSubmitted;
   const requiredBettors = room.players.filter((p) => {
-    if (p.isEliminated || !p.isConnected || p.id === room.activePlayerId) return false;
+    if (!canPlayerParticipate(p, room.turnNumber)) return false;
+    if (!p.isConnected || p.id === room.activePlayerId) return false;
     const turnBet = (p.positions ?? [])
       .filter((pos) => pos.turnNumber === room.turnNumber)
       .reduce((sum, pos) => sum + pos.margin, 0);
@@ -262,6 +265,7 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
           >
             나가기
           </button>
+          <VersionBadge />
         </div>
       </header>
 
@@ -271,6 +275,7 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
         currentPlayerId={playerId}
         hostId={room.hostId}
         startingBalance={startingBalance}
+        turnNumber={room.turnNumber}
       />
 
       {error && (
@@ -282,7 +287,13 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
         </div>
       )}
 
-      {isSpectator && (
+      {isWaitingToPlay && (
+        <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-blue)]/30 bg-[var(--color-accent-blue)]/5 px-4 py-2 text-center text-xs text-[var(--color-accent-blue)]">
+          턴 {me?.joinsFromTurn ?? '?'}부터 참여 가능합니다 · 현재 턴은 관전만 가능
+        </div>
+      )}
+
+      {isEliminated && (
         <div className="mx-4 mt-2 rounded-lg border border-[var(--color-accent-red)]/30 bg-[var(--color-accent-red)]/5 px-4 py-2 text-center text-xs text-[var(--color-accent-red)]">
           탈락했습니다. 관전 모드로 게임을 지켜볼 수 있습니다.
         </div>
@@ -478,6 +489,7 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
                 activePlayerId={room.activePlayerId}
                 currentPlayerId={playerId}
                 hostId={room.hostId}
+                turnNumber={room.turnNumber}
               />
             ) : showPreBetting && sidePanel === 'trade' ? (
               <BettingPanel
@@ -542,13 +554,23 @@ export default function GameRoom({ room, playerId, error, chatMessages, onDismis
                 잔액 부족 (10만원 미만) — 추가 매수 불가
               </div>
             ) : isSpectator ? (
-              <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">관전 중...</div>
+              <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
+                {isWaitingToPlay ? (
+                  <>
+                    <p>턴 {me?.joinsFromTurn}부터 참여합니다</p>
+                    <p className="mt-2 text-xs">지금은 관전만 가능 · 채팅은 사용할 수 있습니다</p>
+                  </>
+                ) : (
+                  <p>관전 중...</p>
+                )}
+              </div>
             ) : (
               <PlayerList
                 players={room.players}
                 activePlayerId={room.activePlayerId}
                 currentPlayerId={playerId}
                 hostId={room.hostId}
+                turnNumber={room.turnNumber}
               />
             )}
           </div>
