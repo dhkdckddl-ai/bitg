@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { socketService, getInviteLink } from '../socket';
-import { PublicRoomState, formatKRW, formatPrice } from '../types';
+import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, isBettingPhase } from '../types';
 import TradingChart from './TradingChart';
 import DrawingCanvas from './DrawingCanvas';
 import BettingPanel from './BettingPanel';
@@ -20,6 +20,7 @@ interface Props {
 const PHASE_LABELS: Record<string, string> = {
   waiting: '대기 중',
   drawing: '그래프 그리기 & 배팅',
+  betting: '그래프 그리기 & 배팅',
   animating: '거래 진행 중',
   turn_end: '턴 종료',
   game_end: '게임 종료',
@@ -73,9 +74,12 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
     .filter((p) => p.turnNumber === room.turnNumber)
     .reduce((sum, p) => sum + p.margin, 0);
 
-  const showDrawing = room.phase === 'drawing' && isActivePlayer && !isSpectator;
+  const maxTurns = room.maxTurns ?? MAX_TURNS;
+  const bettingPhase = isBettingPhase(room.phase);
+
+  const showDrawing = bettingPhase && isActivePlayer && !isSpectator;
   const showBetting =
-    room.phase === 'drawing' &&
+    bettingPhase &&
     !isActivePlayer &&
     !isSpectator &&
     (me?.balance ?? 0) >= 100_000;
@@ -85,12 +89,12 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
   const winner = room.winnerId ? room.players.find((p) => p.id === room.winnerId) : null;
 
   useEffect(() => {
-    if (room.phase === 'drawing') {
+    if (bettingPhase) {
       setSidePanel('trade');
     } else if (canSell && (me?.positions.length ?? 0) > 0) {
       setSidePanel('sell');
     }
-  }, [room.phase, room.turnNumber, canSell, me?.positions.length]);
+  }, [bettingPhase, room.turnNumber, canSell, me?.positions.length]);
 
   return (
     <div className="flex h-full flex-col relative">
@@ -109,7 +113,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
         </div>
       )}
 
-      {room.phase === 'drawing' && !isActivePlayer && !isSpectator && (
+      {bettingPhase && !isActivePlayer && !isSpectator && (
         <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
           <div className="mx-4 mt-4 rounded-xl border-2 border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/15 px-6 py-4 text-center backdrop-blur-sm">
             <p className="text-xl font-bold text-white md:text-2xl">
@@ -134,13 +138,13 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
             <div>
               <h1 className="text-sm font-bold">{room.name}</h1>
               <p className="text-[10px] text-[var(--color-text-secondary)]">
-                턴 {room.turnNumber}/{room.maxTurns}
-                {room.activePlayerId && room.phase === 'drawing' && (
+                턴 {room.turnNumber}/{maxTurns}
+                {room.activePlayerId && bettingPhase && (
                   <span className="text-[var(--color-accent-yellow)]">
                     {' '}· {room.players.find((p) => p.id === room.activePlayerId)?.nickname} 그리는 중
                   </span>
                 )}
-                {room.phase !== 'drawing' && ` · ${PHASE_LABELS[room.phase]}`}
+                {room.phase !== 'drawing' && room.phase !== 'betting' && ` · ${PHASE_LABELS[room.phase] ?? room.phase}`}
               </p>
             </div>
           </div>
@@ -238,7 +242,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
 
       {room.phase === 'turn_end' && (
         <div className="mx-4 mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-center text-xs text-[var(--color-text-secondary)]">
-          {room.turnNumber >= room.maxTurns ? '마지막 턴 종료! 결과 집계 중...' : '턴 종료! 다음 턴 준비 중...'}
+          {room.turnNumber >= maxTurns ? '마지막 턴 종료! 결과 집계 중...' : '턴 종료! 다음 턴 준비 중...'}
         </div>
       )}
 
@@ -259,7 +263,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
             <div className="flex flex-1 items-center justify-center bg-[var(--color-bg-secondary)]">
               <div className="rounded-xl border border-[var(--color-accent-yellow)]/40 p-8 text-center">
                 <p className="text-4xl">🏆</p>
-                <h2 className="mt-4 text-xl font-bold">{room.maxTurns}턴 종료!</h2>
+                <h2 className="mt-4 text-xl font-bold">{maxTurns}턴 종료!</h2>
                 {winner ? (
                   <>
                     <p className="mt-4 text-2xl font-bold text-[var(--color-accent-yellow)]">{winner.nickname} 승리</p>
@@ -353,7 +357,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                     : 'text-[var(--color-text-secondary)]'
                 }`}
               >
-                {room.phase === 'drawing' ? '배팅' : room.phase === 'animating' ? '거래' : '정보'}
+                {bettingPhase ? '배팅' : room.phase === 'animating' ? '거래' : '정보'}
               </button>
               <button
                 onClick={() => setSidePanel('sell')}
@@ -389,7 +393,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                 onReady={handleReady}
                 bettingReady={me?.bettingReady}
               />
-            ) : room.phase === 'drawing' && isActivePlayer ? (
+            ) : bettingPhase && isActivePlayer ? (
               <div className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
                 <p>그래프를 완료해주세요</p>
                 <p className="mt-2 text-xs">자신이 그린 턴에는 배팅·매도 불가</p>
@@ -406,7 +410,7 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
                 <p>자신이 그린 턴에는 매도할 수 없습니다</p>
                 <p className="mt-2 text-xs">그래프가 끝난 후 다음 턴부터 매도 가능</p>
               </div>
-            ) : room.phase === 'drawing' && !isActivePlayer && !isSpectator && (me?.balance ?? 0) < 100_000 ? (
+            ) : bettingPhase && !isActivePlayer && !isSpectator && (me?.balance ?? 0) < 100_000 ? (
               <div className="p-4 text-center text-sm text-[var(--color-accent-red)]">
                 잔액 부족 (10만원 미만) — 이번 턴 배팅 불가
               </div>

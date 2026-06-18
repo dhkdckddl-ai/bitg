@@ -9,7 +9,7 @@ export const MAX_PLAYERS_PER_ROOM = 8;
 export const MAX_TURNS = 10;
 export const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
 
-export type GamePhase = 'waiting' | 'drawing' | 'animating' | 'turn_end' | 'game_end';
+export type GamePhase = 'waiting' | 'drawing' | 'betting' | 'animating' | 'turn_end' | 'game_end';
 
 export type PositionType = 'long' | 'short';
 

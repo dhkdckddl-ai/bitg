@@ -2,8 +2,13 @@ export const STARTING_BALANCE = 10_000_000;
 export const STARTING_PRICE = 1_000_000;
 export const MIN_BET = 100_000;
 export const MAX_LEVERAGE = 100;
+export const MAX_TURNS = 10;
 
-export type GamePhase = 'waiting' | 'drawing' | 'animating' | 'turn_end' | 'game_end';
+export type GamePhase = 'waiting' | 'drawing' | 'betting' | 'animating' | 'turn_end' | 'game_end';
+
+export function isBettingPhase(phase: string): boolean {
+  return phase === 'drawing' || phase === 'betting';
+}
 
 export type PositionType = 'long' | 'short';
 

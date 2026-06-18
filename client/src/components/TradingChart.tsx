@@ -198,14 +198,14 @@ export default function TradingChart({
         </div>
       </div>
       <div ref={containerRef} className="relative flex-1 min-h-0">
-        {phase === 'drawing' && (
+        {phase === 'drawing' || phase === 'betting' ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#12161c]/40">
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/90 px-6 py-4 text-center">
               <p className="text-sm font-semibold text-[var(--color-accent-blue)]">🔒 그래프 비공개</p>
               <p className="mt-1 text-xs text-[var(--color-text-secondary)]">그리는 동안 배팅하세요 · 완료 후 그래프가 그려집니다</p>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

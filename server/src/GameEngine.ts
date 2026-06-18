@@ -54,15 +54,8 @@ function createPlayer(id: string, nickname: string): Player {
   };
 }
 
-function getOrderedActivePlayers(room: RoomState): Player[] {
-  const order = room.turnOrder.length > 0 ? room.turnOrder : room.players.map((p) => p.id);
-  return order
-    .map((id) => room.players.find((p) => p.id === id))
-    .filter((p): p is Player => !!p && !p.isEliminated && p.isConnected);
-}
-
 function getActivePlayers(room: RoomState): Player[] {
-  return getOrderedActivePlayers(room);
+  return room.players.filter((p) => !p.isEliminated);
 }
 
 function getActivePlayer(room: RoomState): Player | null {
@@ -151,7 +144,7 @@ function toPublicPlayer(player: Player, currentPrice: number): PublicPlayer {
 }
 
 function getVisiblePricePath(room: RoomState): PricePoint[] {
-  if (room.phase === 'drawing' || room.phase === 'waiting' || room.phase === 'game_end') {
+  if (room.phase === 'drawing' || room.phase === 'betting' || room.phase === 'waiting' || room.phase === 'game_end') {
     return [];
   }
   if (room.pricePath.length === 0) return [];
@@ -213,6 +206,7 @@ export class GameEngine {
       animationProgress: 0,
       turnNumber: 0,
       gameStarted: false,
+      maxTurns: MAX_TURNS,
       winnerId: null,
       pathSubmitted: false,
       turnOrder: [],
@@ -353,10 +347,7 @@ export class GameEngine {
 
     room.gameStarted = true;
     room.turnNumber = 1;
-
-    const participants = room.players.filter((p) => p.isConnected && !p.isEliminated);
-    room.turnOrder = participants.map((p) => p.id);
-    room.turnIndex = Math.floor(Math.random() * participants.length);
+    room.turnIndex = 0;
 
     this.startDrawingPhase(room);
     return true;
@@ -380,7 +371,9 @@ export class GameEngine {
 
   placeBet(roomId: string, playerId: string, bet: BetRequest): string | null {
     const room = this.rooms.get(roomId);
-    if (!room || room.phase !== 'drawing') return '배팅 가능 시간이 아닙니다';
+    if (!room || (room.phase !== 'drawing' && room.phase !== 'betting')) {
+      return '배팅 가능 시간이 아닙니다';
+    }
 
     const active = getActivePlayer(room);
     if (active?.id === playerId) return '그래프를 그리는 동안에는 배팅할 수 없습니다';
@@ -410,7 +403,9 @@ export class GameEngine {
 
   setBettingReady(roomId: string, playerId: string): string | null {
     const room = this.rooms.get(roomId);
-    if (!room || room.phase !== 'drawing') return '배팅 가능 시간이 아닙니다';
+    if (!room || (room.phase !== 'drawing' && room.phase !== 'betting')) {
+      return '배팅 가능 시간이 아닙니다';
+    }
 
     const active = getActivePlayer(room);
     if (active?.id === playerId) return '그래프를 그리는 동안에는 배팅할 수 없습니다';
@@ -431,7 +426,8 @@ export class GameEngine {
 
   private tryStartAnimation(roomId: string): void {
     const room = this.rooms.get(roomId);
-    if (!room || room.phase !== 'drawing') return;
+    if (!room) return;
+    if (room.phase !== 'drawing' && room.phase !== 'betting') return;
     if (!room.pathSubmitted || room.pricePath.length === 0) return;
 
     const active = getActivePlayer(room);
@@ -595,7 +591,7 @@ export class GameEngine {
       return;
     }
 
-    const activeCount = getOrderedActivePlayers(room).length;
+    const activeCount = getActivePlayers(room).length;
     if (activeCount <= 1) {
       setTimeout(() => {
         const r = this.rooms.get(roomId);
