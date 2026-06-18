@@ -47,6 +47,26 @@ function sendChatHistory(socket: import('socket.io').Socket, roomId: string) {
   socket.emit('chatHistory', getChatHistory(roomId));
 }
 
+const activePlayerSockets = new Map<string, string>();
+
+function registerPlayerSocket(playerId: string, socket: import('socket.io').Socket) {
+  activePlayerSockets.set(playerId, socket.id);
+  socket.data.playerId = playerId;
+}
+
+function joinPlayerRoom(
+  socket: import('socket.io').Socket,
+  playerId: string,
+  room: ReturnType<typeof engine.getRoom>
+) {
+  if (!room) return;
+  registerPlayerSocket(playerId, socket);
+  socket.join(room.id);
+  socket.emit('roomJoined', toPublicRoomState(room));
+  sendChatHistory(socket, room.id);
+  io.to(room.id).emit('roomUpdate', toPublicRoomState(room));
+}
+
 io.on('connection', (socket) => {
   let playerId = uuidv4();
 
@@ -54,15 +74,13 @@ io.on('connection', (socket) => {
     if (storedPlayerId && typeof storedPlayerId === 'string') {
       playerId = storedPlayerId;
     }
-    socket.data.playerId = playerId;
+
+    registerPlayerSocket(playerId, socket);
 
     const room = engine.reconnect(playerId);
     if (room) {
-      socket.join(room.id);
       socket.emit('connected', { playerId });
-      socket.emit('roomJoined', toPublicRoomState(room));
-      sendChatHistory(socket, room.id);
-      io.to(room.id).emit('roomUpdate', toPublicRoomState(room));
+      joinPlayerRoom(socket, playerId, room);
     } else {
       socket.emit('connected', { playerId });
     }
@@ -87,6 +105,7 @@ io.on('connection', (socket) => {
     }
 
     const room = engine.createRoom(playerId, nickname.trim(), roomName.trim());
+    registerPlayerSocket(playerId, socket);
     socket.join(room.id);
     socket.emit('roomJoined', toPublicRoomState(room));
     sendChatHistory(socket, room.id);
@@ -117,6 +136,7 @@ io.on('connection', (socket) => {
     }
 
     socket.join(roomId);
+    registerPlayerSocket(playerId, socket);
     socket.emit('roomJoined', toPublicRoomState(result.room));
     sendChatHistory(socket, roomId);
     io.to(roomId).emit('roomUpdate', toPublicRoomState(result.room));
@@ -125,8 +145,13 @@ io.on('connection', (socket) => {
 
   socket.on('leaveRoom', ({ roomId }: { roomId: string }) => {
     engine.leaveRoom(playerId);
+    activePlayerSockets.delete(playerId);
     socket.leave(roomId);
     socket.emit('roomLeft');
+    const room = engine.getRoom(roomId);
+    if (room) {
+      io.to(roomId).emit('roomUpdate', toPublicRoomState(room));
+    }
     broadcastRooms();
   });
 
@@ -214,8 +239,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    engine.handleDisconnect(playerId);
-    const room = engine.getRoomByPlayer(playerId);
+    const id = (socket.data.playerId as string | undefined) ?? playerId;
+    if (activePlayerSockets.get(id) !== socket.id) return;
+
+    activePlayerSockets.delete(id);
+    engine.handleDisconnect(id);
+    const room = engine.getRoomByPlayer(id);
     if (room) {
       io.to(room.id).emit('roomUpdate', toPublicRoomState(room));
     }

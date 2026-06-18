@@ -247,7 +247,6 @@ export class GameEngine {
   joinRoom(roomId: string, playerId: string, nickname: string): { room: RoomState } | { error: string } {
     const room = this.rooms.get(roomId);
     if (!room) return { error: '방을 찾을 수 없습니다' };
-    if (room.gameStarted) return { error: '이미 시작된 게임에는 입장할 수 없습니다' };
 
     const existing = room.players.find((p) => p.id === playerId);
     if (existing) {
@@ -256,6 +255,8 @@ export class GameEngine {
       this.playerRoom.set(playerId, roomId);
       return { room };
     }
+
+    if (room.gameStarted) return { error: '이미 시작된 게임에는 입장할 수 없습니다' };
 
     if (room.players.length >= MAX_PLAYERS_PER_ROOM) {
       return { error: `방이 가득 찼습니다 (최대 ${MAX_PLAYERS_PER_ROOM}명)` };
@@ -325,6 +326,16 @@ export class GameEngine {
     if (!roomId) return;
     const room = this.rooms.get(roomId);
     if (!room) return;
+
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return;
+
+    if (room.gameStarted) {
+      player.isConnected = false;
+      player.disconnectedAt = Date.now();
+      this.playerRoom.delete(playerId);
+      return;
+    }
 
     room.players = room.players.filter((p) => p.id !== playerId);
     this.playerRoom.delete(playerId);
