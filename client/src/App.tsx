@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socketService, getRoomIdFromUrl } from './socket';
-import { PublicRoomState, RoomListItem } from './types';
+import { PublicRoomState, RoomListItem, ChatMessage } from './types';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
 
@@ -8,6 +8,7 @@ export default function App() {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [currentRoom, setCurrentRoom] = useState<PublicRoomState | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nickname, setNickname] = useState(() => localStorage.getItem('bitg_nickname') || '');
   const [inviteRoomId] = useState(() => getRoomIdFromUrl());
@@ -27,14 +28,20 @@ export default function App() {
       onRoomUpdate: setCurrentRoom,
       onRoomDeleted: () => {
         setCurrentRoom(null);
+        setChatMessages([]);
         setError('방이 삭제되었습니다');
         socketService.getRooms();
       },
       onRoomLeft: () => {
         setCurrentRoom(null);
+        setChatMessages([]);
         socketService.getRooms();
       },
       onError: ({ message }) => setError(message),
+      onChatHistory: setChatMessages,
+      onChatMessage: (message) => {
+        setChatMessages((prev) => [...prev, message].slice(-100));
+      },
     });
 
     return () => socketService.disconnect();
@@ -70,6 +77,7 @@ export default function App() {
         room={currentRoom}
         playerId={playerId}
         error={error}
+        chatMessages={chatMessages}
         onDismissError={dismissError}
         onLeave={() => {
           socketService.leaveRoom(currentRoom.id);

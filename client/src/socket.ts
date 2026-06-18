@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { PublicRoomState, RoomListItem } from './types';
+import { PublicRoomState, RoomListItem, ChatMessage } from './types';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 const PLAYER_ID_KEY = 'bitg_player_id';
@@ -12,6 +12,8 @@ type EventHandlers = {
   onRoomDeleted: () => void;
   onRoomLeft: () => void;
   onError: (data: { message: string }) => void;
+  onChatHistory: (messages: ChatMessage[]) => void;
+  onChatMessage: (message: ChatMessage) => void;
 };
 
 function getStoredPlayerId(): string | null {
@@ -56,6 +58,8 @@ class SocketService {
     this.socket.on('roomDeleted', handlers.onRoomDeleted);
     this.socket.on('roomLeft', handlers.onRoomLeft);
     this.socket.on('error', handlers.onError);
+    this.socket.on('chatHistory', handlers.onChatHistory);
+    this.socket.on('chatMessage', handlers.onChatMessage);
   }
 
   disconnect() {
@@ -101,6 +105,10 @@ class SocketService {
 
   sellPosition(roomId: string, positionId: string, percentage: number) {
     this.socket?.emit('sellPosition', { roomId, positionId, percentage });
+  }
+
+  sendChat(roomId: string, message: string) {
+    this.socket?.emit('sendChat', { roomId, message });
   }
 }
 

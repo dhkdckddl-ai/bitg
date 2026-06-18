@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { socketService, getInviteLink } from '../socket';
-import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, STARTING_BALANCE, STARTING_PRICE, MIN_BET, isBettingPhase } from '../types';
+import { PublicRoomState, formatKRW, formatPrice, MAX_TURNS, STARTING_BALANCE, STARTING_PRICE, MIN_BET, isBettingPhase, ChatMessage } from '../types';
 import TradingChart from './TradingChart';
 import DrawingCanvas from './DrawingCanvas';
 import BettingPanel from './BettingPanel';
@@ -8,11 +8,14 @@ import SellPanel from './SellPanel';
 import PlayerList from './PlayerList';
 import OrderBook from './OrderBook';
 import TradeHistory from './TradeHistory';
+import PlayerAssetsBar from './PlayerAssetsBar';
+import ChatPanel from './ChatPanel';
 
 interface Props {
   room: PublicRoomState;
   playerId: string;
   error: string | null;
+  chatMessages: ChatMessage[];
   onDismissError: () => void;
   onLeave: () => void;
 }
@@ -26,7 +29,7 @@ const PHASE_LABELS: Record<string, string> = {
   game_end: '게임 종료',
 };
 
-export default function GameRoom({ room, playerId, error, onDismissError, onLeave }: Props) {
+export default function GameRoom({ room, playerId, error, chatMessages, onDismissError, onLeave }: Props) {
   const [sidePanel, setSidePanel] = useState<'trade' | 'sell'>('trade');
   const [copied, setCopied] = useState(false);
   const [showDrawTurnBanner, setShowDrawTurnBanner] = useState(false);
@@ -261,6 +264,14 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
           </button>
         </div>
       </header>
+
+      <PlayerAssetsBar
+        players={room.players}
+        activePlayerId={room.activePlayerId}
+        currentPlayerId={playerId}
+        hostId={room.hostId}
+        startingBalance={startingBalance}
+      />
 
       {error && (
         <div className="mx-4 mt-2">
@@ -559,7 +570,13 @@ export default function GameRoom({ room, playerId, error, onDismissError, onLeav
           )}
         </div>
       </div>
-    </div>
+      </div>
+
+      <ChatPanel
+        messages={chatMessages}
+        currentPlayerId={playerId}
+        onSend={(message) => socketService.sendChat(room.id, message)}
+      />
     </div>
   );
 }

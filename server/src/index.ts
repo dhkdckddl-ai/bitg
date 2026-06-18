@@ -5,6 +5,7 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import { GameEngine, toPublicRoomState } from './GameEngine.js';
 import { PricePoint } from './types.js';
+import { addChatMessage, getChatHistory, clearRoomChat } from './chat.js';
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*';
 const PORT = process.env.PORT || 3001;
@@ -42,6 +43,10 @@ function broadcastRooms() {
   io.emit('roomsList', engine.getAllRooms());
 }
 
+function sendChatHistory(socket: import('socket.io').Socket, roomId: string) {
+  socket.emit('chatHistory', getChatHistory(roomId));
+}
+
 io.on('connection', (socket) => {
   let playerId = uuidv4();
 
@@ -56,6 +61,7 @@ io.on('connection', (socket) => {
       socket.join(room.id);
       socket.emit('connected', { playerId });
       socket.emit('roomJoined', toPublicRoomState(room));
+      sendChatHistory(socket, room.id);
       io.to(room.id).emit('roomUpdate', toPublicRoomState(room));
     } else {
       socket.emit('connected', { playerId });
@@ -83,6 +89,7 @@ io.on('connection', (socket) => {
     const room = engine.createRoom(playerId, nickname.trim(), roomName.trim());
     socket.join(room.id);
     socket.emit('roomJoined', toPublicRoomState(room));
+    sendChatHistory(socket, room.id);
     broadcastRooms();
   });
 
@@ -92,6 +99,7 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: '방을 삭제할 권한이 없습니다' });
       return;
     }
+    clearRoomChat(roomId);
     io.to(roomId).emit('roomDeleted');
     broadcastRooms();
   });
@@ -110,6 +118,7 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
     socket.emit('roomJoined', toPublicRoomState(result.room));
+    sendChatHistory(socket, roomId);
     io.to(roomId).emit('roomUpdate', toPublicRoomState(result.room));
     broadcastRooms();
   });
@@ -183,6 +192,25 @@ io.on('connection', (socket) => {
     }
     const room = engine.getRoom(roomId);
     if (room) io.to(roomId).emit('roomUpdate', toPublicRoomState(room));
+  });
+
+  socket.on('sendChat', ({ roomId, message }: { roomId: string; message: string }) => {
+    const room = engine.getRoom(roomId);
+    if (!room) {
+      socket.emit('error', { message: '방을 찾을 수 없습니다' });
+      return;
+    }
+
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) {
+      socket.emit('error', { message: '방에 참여 중이 아닙니다' });
+      return;
+    }
+
+    const entry = addChatMessage(roomId, playerId, player.nickname, message);
+    if (!entry) return;
+
+    io.to(roomId).emit('chatMessage', entry);
   });
 
   socket.on('disconnect', () => {

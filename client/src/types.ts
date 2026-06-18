@@ -69,6 +69,14 @@ export interface RoomListItem {
   hostNickname: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  nickname: string;
+  message: string;
+  timestamp: number;
+}
+
 export function formatKRW(amount: number): string {
   const sign = amount >= 0 ? '' : '-';
   return `${sign}₩${Math.abs(Math.round(amount)).toLocaleString('ko-KR')}`;
