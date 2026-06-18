@@ -24,10 +24,13 @@ export function calcUnrealizedPnl(position: Position, currentPrice: number): num
   const ratio = position.remainingMargin / position.margin;
   const effectiveMargin = position.margin * ratio;
   const notional = effectiveMargin * position.leverage;
+  let pnl: number;
   if (position.type === 'long') {
-    return (notional * (currentPrice - position.entryPrice)) / position.entryPrice;
+    pnl = (notional * (currentPrice - position.entryPrice)) / position.entryPrice;
+  } else {
+    pnl = (notional * (position.entryPrice - currentPrice)) / position.entryPrice;
   }
-  return (notional * (position.entryPrice - currentPrice)) / position.entryPrice;
+  return Math.max(pnl, -effectiveMargin);
 }
 
 export function calcPlayerUnrealizedPnl(player: Player, currentPrice: number): number {
@@ -51,8 +54,15 @@ function createPlayer(id: string, nickname: string): Player {
   };
 }
 
+function getOrderedActivePlayers(room: RoomState): Player[] {
+  const order = room.turnOrder.length > 0 ? room.turnOrder : room.players.map((p) => p.id);
+  return order
+    .map((id) => room.players.find((p) => p.id === id))
+    .filter((p): p is Player => !!p && !p.isEliminated && p.isConnected);
+}
+
 function getActivePlayers(room: RoomState): Player[] {
-  return room.players.filter((p) => !p.isEliminated);
+  return getOrderedActivePlayers(room);
 }
 
 function getActivePlayer(room: RoomState): Player | null {
@@ -150,7 +160,7 @@ function getVisiblePricePath(room: RoomState): PricePoint[] {
   const total = room.pricePath.length;
   if (total <= 1) return room.pricePath;
 
-  const maxIdx = Math.max(1, Math.floor(room.animationProgress * (total - 1)));
+  const maxIdx = Math.max(1, Math.floor(Math.pow(room.animationProgress, 1.2) * (total - 1)));
   return room.pricePath.slice(0, maxIdx + 1);
 }
 
@@ -205,6 +215,7 @@ export class GameEngine {
       gameStarted: false,
       winnerId: null,
       pathSubmitted: false,
+      turnOrder: [],
       createdAt: Date.now(),
     };
     this.rooms.set(roomId, room);
@@ -342,6 +353,11 @@ export class GameEngine {
 
     room.gameStarted = true;
     room.turnNumber = 1;
+
+    const participants = room.players.filter((p) => p.isConnected && !p.isEliminated);
+    room.turnOrder = participants.map((p) => p.id);
+    room.turnIndex = Math.floor(Math.random() * participants.length);
+
     this.startDrawingPhase(room);
     return true;
   }
@@ -435,6 +451,9 @@ export class GameEngine {
     const room = this.rooms.get(roomId);
     if (!room || room.phase !== 'animating') return '애니메이션 중에만 매도할 수 있습니다';
 
+    const active = getActivePlayer(room);
+    if (active?.id === playerId) return '자신이 그린 턴에는 매도할 수 없습니다';
+
     if (percentage < 10 || percentage > 100) return '매도 비율은 10%~100% 사이여야 합니다';
 
     const player = room.players.find((p) => p.id === playerId);
@@ -462,6 +481,7 @@ export class GameEngine {
   }
 
   private checkElimination(player: Player, currentPrice: number): void {
+    if (player.isEliminated) return;
     const equity = calcTotalEquity(player, currentPrice);
     if (equity <= 0) {
       player.isEliminated = true;
@@ -532,7 +552,8 @@ export class GameEngine {
       }
 
       const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / ANIMATION_DURATION_MS);
+      const linear = Math.min(1, elapsed / ANIMATION_DURATION_MS);
+      const progress = linear * linear * (3 - 2 * linear);
       r.animationProgress = progress;
 
       const idx = Math.floor(progress * (r.pricePath.length - 1));
@@ -540,13 +561,13 @@ export class GameEngine {
 
       this.checkLiquidations(r);
 
-      if (progress >= 1) {
+      if (linear >= 1) {
         this.stopAnimation(roomId);
         this.endTurn(roomId);
       }
 
       this.onRoomUpdate(roomId);
-    }, 100);
+    }, 200);
 
     this.animationTimers.set(roomId, timer);
   }
@@ -574,7 +595,7 @@ export class GameEngine {
       return;
     }
 
-    const activeCount = getActivePlayers(room).length;
+    const activeCount = getOrderedActivePlayers(room).length;
     if (activeCount <= 1) {
       setTimeout(() => {
         const r = this.rooms.get(roomId);

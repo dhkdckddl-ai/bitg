@@ -11,10 +11,13 @@ interface Props {
 
 function calcPnl(position: Position, currentPrice: number): number {
   const notional = position.remainingMargin * position.leverage;
+  let pnl: number;
   if (position.type === 'long') {
-    return (notional * (currentPrice - position.entryPrice)) / position.entryPrice;
+    pnl = (notional * (currentPrice - position.entryPrice)) / position.entryPrice;
+  } else {
+    pnl = (notional * (position.entryPrice - currentPrice)) / position.entryPrice;
   }
-  return (notional * (position.entryPrice - currentPrice)) / position.entryPrice;
+  return Math.max(pnl, -position.remainingMargin);
 }
 
 function calcPnlPercent(position: Position, currentPrice: number): number {
@@ -48,6 +51,12 @@ export default function SellPanel({ positions, currentPrice, onSell, disabled }:
   return (
     <div className="flex flex-col gap-4 p-4">
       <h3 className="text-sm font-semibold">포지션 매도</h3>
+
+      {disabled && (
+        <div className="rounded-lg border border-[var(--color-accent-yellow)]/30 bg-[var(--color-accent-yellow)]/5 p-3 text-xs text-[var(--color-accent-yellow)]">
+          자신이 그린 턴에는 매도할 수 없습니다
+        </div>
+      )}
 
       <div className="space-y-2">
         {positions.map((pos) => {

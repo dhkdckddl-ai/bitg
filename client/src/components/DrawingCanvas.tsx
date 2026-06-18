@@ -211,12 +211,11 @@ export default function DrawingCanvas({ minPrice, maxPrice, currentPrice, onSubm
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2">
+      <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-accent-yellow)]/10 px-4 py-3">
         <div>
-          <h3 className="text-sm font-semibold">24시간 그래프 그리기</h3>
-          <p className="text-[10px] text-[var(--color-text-secondary)]">
-            ±50% 범위 내에서 하루치 가격 경로를 그려주세요
-          </p>
+          <h3 className="text-lg font-black text-[var(--color-accent-yellow)]">🎨 당신의 턴!</h3>
+          <p className="text-sm font-semibold text-white">아래 캔버스에 24시간 그래프를 그려주세요</p>
+          <p className="text-[10px] text-[var(--color-text-secondary)]">±50% 범위 · 완료 버튼 필수</p>
         </div>
         <div className="flex gap-2">
           <button
